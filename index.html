@@ -767,14 +767,13 @@
   reportFrame.srcdoc = REPORT_HTML;
 
   // ---------- enheds-synkronisering af rapportens data ----------
-  // Bruger kvdb.io som en gratis, simpel "postkasse" på nettet — ingen login,
-  // ingen konto. Koden er navnet på postkassen; alle enheder med samme kode
-  // deler den samme gemte rapport.
+  // Bruger Netlify Blobs (indbygget lagring på selve Netlify-sitet, se
+  // netlify/edge-functions/sync.js) som en simpel "postkasse". Koden er
+  // navnet på postkassen; alle enheder med samme kode deler den samme data.
   (function () {
-    var KVDB = "https://kvdb.io";
+    var SYNC_API = "/api/sync";
     var SYNC_KEY = "report";
     var LS_CODE_KEY = "dlh-sync-code";
-    var LS_EMAIL_KEY = "dlh-sync-email";
 
     var syncCode = localStorage.getItem(LS_CODE_KEY) || null;
     var pushTimer = null;
@@ -831,7 +830,7 @@
       var state = getReportState();
       if (!state) return;
       try {
-        await fetch(KVDB + "/" + syncCode + "/" + SYNC_KEY, {
+        await fetch(SYNC_API + "/" + syncCode + "/" + SYNC_KEY, {
           method: "PUT",
           body: JSON.stringify(state)
         });
@@ -845,7 +844,7 @@
       if (!syncCode) return;
       if (showStatus) setStatus("Henter nyeste...");
       try {
-        var res = await fetch(KVDB + "/" + syncCode + "/" + SYNC_KEY);
+        var res = await fetch(SYNC_API + "/" + syncCode + "/" + SYNC_KEY);
         if (res.status === 404) {
           if (showStatus) setStatus("Forbundet · ingen data endnu");
           return;
@@ -884,36 +883,25 @@
       startPolling();
     }
 
+    // Laver en kort, tilfældig kode (fx "K7QXM2") - ingen bogstaver/tal der
+    // let forveksles (0/O, 1/I/L er udeladt). Koden er bare et "rum" i vores
+    // egen lagring, så den behøver ikke bekræftes med en server først.
+    function generateCode() {
+      var chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+      var code = "";
+      for (var i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+      return code;
+    }
+
     createBtn.addEventListener("click", async function () {
       createBtn.disabled = true;
       setStatus("Opretter kode...");
       try {
-        var email = localStorage.getItem(LS_EMAIL_KEY);
-        if (!email) {
-          email = prompt("Indtast din e-mail (bruges kun til at oprette forbindelseskoden, gemmes kun på denne enhed):");
-          if (!email || !email.trim()) {
-            setStatus("Ikke forbundet — e-mail er nødvendig for at oprette en kode");
-            createBtn.disabled = false;
-            return;
-          }
-          email = email.trim();
-          localStorage.setItem(LS_EMAIL_KEY, email);
-        }
-        var res = await fetch(KVDB, {
-          method: "POST",
-          body: new URLSearchParams({ email: email })
-        });
-        if (!res.ok) {
-          var errText = (await res.text()).trim();
-          throw new Error(errText || "kunne ikke oprette");
-        }
-        var code = (await res.text()).trim();
-        if (!code) throw new Error("no code returned");
-        await connectWithCode(code);
+        await connectWithCode(generateCode());
         // gem den aktuelle rapport med det samme, så koden er klar til den anden enhed
         schedulePush();
       } catch (e) {
-        setStatus("Kunne ikke oprette kode (" + (e && e.message ? e.message : "tjek internet") + ")");
+        setStatus("Kunne ikke oprette kode (tjek internet)");
       } finally {
         createBtn.disabled = false;
       }
@@ -988,14 +976,14 @@
     async function pushHistory(history) {
       if (!syncCode) return;
       try {
-        await fetch(KVDB + "/" + syncCode + "/history", { method: "PUT", body: JSON.stringify(history) });
+        await fetch(SYNC_API + "/" + syncCode + "/history", { method: "PUT", body: JSON.stringify(history) });
       } catch (e) {}
     }
 
     async function pullHistoryRemote() {
       if (!syncCode) return null;
       try {
-        var res = await fetch(KVDB + "/" + syncCode + "/history");
+        var res = await fetch(SYNC_API + "/" + syncCode + "/history");
         if (res.status === 404) return [];
         if (!res.ok) return null;
         return await res.json();
@@ -1062,14 +1050,14 @@
     async function pushUpcoming(list) {
       if (!syncCode) return;
       try {
-        await fetch(KVDB + "/" + syncCode + "/upcoming", { method: "PUT", body: JSON.stringify(list) });
+        await fetch(SYNC_API + "/" + syncCode + "/upcoming", { method: "PUT", body: JSON.stringify(list) });
       } catch (e) {}
     }
 
     async function pullUpcomingRemote() {
       if (!syncCode) return null;
       try {
-        var res = await fetch(KVDB + "/" + syncCode + "/upcoming");
+        var res = await fetch(SYNC_API + "/" + syncCode + "/upcoming");
         if (res.status === 404) return [];
         if (!res.ok) return null;
         return await res.json();

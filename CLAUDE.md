@@ -6,8 +6,12 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
 
 ## Projektstruktur
 
-- **Alt er én fil**: `index.html`. Ingen build-trin, ingen package.json,
-  ingen dependencies at installere. HTML/CSS/vanilla JS i ét dokument.
+- **Det meste er én fil**: `index.html`. Ingen build-trin, ingen
+  package.json, ingen dependencies at installere for selve appen.
+  HTML/CSS/vanilla JS i ét dokument.
+- `netlify/edge-functions/sync.js` — lille serverless funktion, der driver
+  enheds-sync'en (se nedenfor). Bundles automatisk af Netlify ved deploy,
+  kræver ikke npm install lokalt.
 - `netlify.toml` — deploy-config til Netlify (ingen build, publish er roden).
 - Ingen andre kildefiler. Redigér `index.html` direkte.
 
@@ -16,12 +20,21 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
 - **Rapport-fane**: Norddjurs Kommunes opgave- og tidsrapport, kørende i en
   `<iframe srcdoc="...">` inde i `index.html`. Selve rapport-HTML'en ligger
   som en escaped JS-streng midt i filen (søg efter `REPORT_HTML`).
-- **Opgaveoverblik-fane**: viser opgaver logget over tid, gemt i
-  `localStorage` og synkroniseret via kvdb.io.
-- **Enheds-sync**: bruger kvdb.io (gratis, ingen konto) som simpel
-  nøgle/værdi-lager. En "forbindelseskode" er navnet på en kvdb.io-bucket.
-  Både rapportens data (`report`-nøgle) og opgavehistorik (`history`-nøgle)
+- **Opgaveoverblik-fane**: viser opgaver logget over tid (`history`-nøgle),
+  samt "Kommende opgaver" (`upcoming`-nøgle) — begge gemt i `localStorage`
+  og synkroniseret på samme måde som rapporten.
+- **Enheds-sync**: bruger Netlify Blobs (indbygget nøgle/værdi-lager på selve
+  Netlify-sitet) via edge-funktionen `netlify/edge-functions/sync.js`, kaldt
+  fra `index.html` på adressen `/api/sync/<kode>/<nøgle>`. En
+  "forbindelseskode" er bare et "rum" i lageret — genereres lokalt i
+  browseren (ingen server-kald, ingen e-mail/konto nødvendig). Rapport
+  (`report`), historik (`history`) og kommende opgaver (`upcoming`)
   synkroniseres denne vej.
+  - Virker kun når siden faktisk er deployet på Netlify (edge-funktionen
+    kører ikke ved lokal `npx serve` eller ved at åbne filen direkte) —
+    brug `netlify dev` hvis sync skal testes lokalt.
+  - Tidligere brugte appen kvdb.io til dette; det er udskiftet, fordi
+    kvdb.io's "opret kode"-endpoint stoppede med at virke pålideligt.
 - **AI-hjælpere**: tre chat-faner (MS Office, Programmering, Struktur &
   optimering), der kalder Anthropic API'et direkte fra browseren
   (`https://api.anthropic.com/v1/messages`, model `claude-sonnet-4-6`).
