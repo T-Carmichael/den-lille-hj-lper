@@ -356,6 +356,71 @@
     cursor:pointer;
     white-space:nowrap;
   }
+  .ov-upcoming{
+    background:var(--glass);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:14px;
+    margin-bottom:18px;
+  }
+  .ov-upcoming-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .ov-upcoming-title{font-family:"Sora",sans-serif;font-weight:700;font-size:14.5px;}
+  .ov-upcoming-count{font-size:11px;color:var(--sub);}
+  .ov-upcoming-form{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  .ov-upcoming-form input{
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:8px 11px;
+    color:var(--ink);
+    font-size:13px;
+  }
+  .ov-upcoming-form input::placeholder{color:var(--sub);}
+  .ov-upcoming-form input[type="text"]{flex:1 1 150px;}
+  .ov-upcoming-form input[type="date"]{flex:0 0 140px;color:var(--sub);}
+  .ov-upcoming-form button{
+    background:var(--amber-soft);
+    border:1px solid rgba(255,200,87,0.5);
+    color:var(--ink);
+    font-size:12.5px;font-weight:700;
+    padding:8px 14px;
+    border-radius:10px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .ov-upcoming-list{display:flex;flex-direction:column;gap:7px;}
+  .ov-upcoming-item{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:8px;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:9px 12px;
+  }
+  .ov-upcoming-item-title{font-size:13.5px;font-weight:600;}
+  .ov-upcoming-item-desc{font-size:12px;color:var(--sub);margin-top:2px;}
+  .ov-upcoming-item-date{font-size:11px;color:var(--amber);font-weight:600;margin-top:4px;}
+  .ov-upcoming-done-btn{
+    flex:0 0 auto;
+    background:none;
+    border:1px solid var(--line);
+    color:var(--sub);
+    font-size:11.5px;font-weight:600;
+    padding:6px 10px;
+    border-radius:9px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .ov-upcoming-done-btn:disabled{opacity:.5;cursor:default;}
+  .ov-upcoming-empty{color:var(--sub);font-size:12.5px;padding:4px 2px;}
   .ov-day{margin-bottom:18px;}
   .ov-day-head{
     display:flex;
@@ -964,6 +1029,101 @@
       return merged;
     };
 
+    // ---------- kommende opgaver (til Opgaveoverblik-fanen) ----------
+    // Opgaver du allerede nu ved kommer, men som ikke skal på dagens rapport endnu.
+    // Deles mellem enheder via samme forbindelseskode som rapporten og historikken.
+    var LS_UPCOMING_KEY = "dlh-upcoming-tasks";
+
+    function loadUpcomingLocal() {
+      try { return JSON.parse(localStorage.getItem(LS_UPCOMING_KEY) || "[]"); }
+      catch (e) { return []; }
+    }
+
+    function saveUpcomingLocal(list) {
+      localStorage.setItem(LS_UPCOMING_KEY, JSON.stringify(list));
+    }
+
+    // Slår to lister sammen: nyeste "updatedAt" vinder pr. opgave-id.
+    // Udførte opgaver markeres som "deleted" i stedet for at blive fjernet,
+    // så en sletning på én enhed ikke "genopstår" ved næste sync fra en anden.
+    function mergeUpcoming(a, b) {
+      var map = {};
+      (a || []).forEach(function (t) { map[t.id] = t; });
+      (b || []).forEach(function (t) {
+        var existing = map[t.id];
+        if (!existing || new Date(t.updatedAt) > new Date(existing.updatedAt)) map[t.id] = t;
+      });
+      return Object.keys(map).map(function (k) { return map[k]; });
+    }
+
+    async function pushUpcoming(list) {
+      if (!syncCode) return;
+      try {
+        await fetch(KVDB + "/" + syncCode + "/upcoming", { method: "PUT", body: JSON.stringify(list) });
+      } catch (e) {}
+    }
+
+    async function pullUpcomingRemote() {
+      if (!syncCode) return null;
+      try {
+        var res = await fetch(KVDB + "/" + syncCode + "/upcoming");
+        if (res.status === 404) return [];
+        if (!res.ok) return null;
+        return await res.json();
+      } catch (e) { return null; }
+    }
+
+    window.__dlhGetUpcoming = function () {
+      return loadUpcomingLocal()
+        .filter(function (t) { return !t.deleted; })
+        .sort(function (x, y) {
+          if (x.dueDate && y.dueDate) return x.dueDate.localeCompare(y.dueDate);
+          if (x.dueDate) return -1;
+          if (y.dueDate) return 1;
+          return (x.createdAt || "").localeCompare(y.createdAt || "");
+        });
+    };
+
+    window.__dlhAddUpcoming = async function (task) {
+      var now = new Date().toISOString();
+      var entry = {
+        id: "u" + Date.now() + Math.random().toString(36).slice(2, 8),
+        title: task.title,
+        note: task.note || "",
+        dueDate: task.dueDate || "",
+        createdAt: now,
+        updatedAt: now,
+        deleted: false
+      };
+      var list = loadUpcomingLocal().concat([entry]);
+      saveUpcomingLocal(list);
+      if (syncCode) await pushUpcoming(list);
+      return entry;
+    };
+
+    window.__dlhCompleteUpcoming = async function (id) {
+      var list = loadUpcomingLocal().map(function (t) {
+        if (t.id !== id) return t;
+        return {
+          id: t.id, title: t.title, note: t.note, dueDate: t.dueDate,
+          createdAt: t.createdAt, updatedAt: new Date().toISOString(), deleted: true
+        };
+      });
+      saveUpcomingLocal(list);
+      if (syncCode) await pushUpcoming(list);
+    };
+
+    // Henter nyeste kommende opgaver fra den delte kode (hvis forbundet) og lægger sammen med det lokale
+    window.__dlhRefreshUpcoming = async function () {
+      var local = loadUpcomingLocal();
+      if (!syncCode) return local;
+      var remote = await pullUpcomingRemote();
+      if (remote === null) return local;
+      var merged = mergeUpcoming(local, remote);
+      saveUpcomingLocal(merged);
+      return merged;
+    };
+
     renderConnectionUI();
   })();
 
@@ -1155,9 +1315,68 @@
       } catch(e){ return dateStr; }
     }
 
+    function formatDueDate(dateStr){
+      if(!dateStr) return "";
+      try{
+        var d = new Date(dateStr + "T00:00:00");
+        return d.toLocaleDateString("da-DK", { day:"numeric", month:"short", year:"numeric" });
+      } catch(e){ return dateStr; }
+    }
+
+    function renderUpcoming(){
+      var listEl = document.getElementById("ov-upcoming-list");
+      if(!listEl) return;
+      var list = window.__dlhGetUpcoming ? window.__dlhGetUpcoming() : [];
+      document.getElementById("ov-upcoming-count").textContent =
+        list.length ? (list.length + (list.length === 1 ? " opgave" : " opgaver")) : "";
+
+      if(list.length === 0){
+        listEl.innerHTML = '<div class="ov-upcoming-empty">Ingen kommende opgaver endnu — tilføj dem, du allerede ved kommer.</div>';
+        return;
+      }
+      var html = "";
+      list.forEach(function(t){
+        html += '<div class="ov-upcoming-item">' +
+          '<div><div class="ov-upcoming-item-title">' + esc(t.title) + '</div>' +
+          (t.note ? '<div class="ov-upcoming-item-desc">' + esc(t.note) + '</div>' : '') +
+          (t.dueDate ? '<div class="ov-upcoming-item-date">' + esc(formatDueDate(t.dueDate)) + '</div>' : '') +
+          '</div>' +
+          '<button class="ov-upcoming-done-btn" data-done-id="' + esc(t.id) + '" type="button">✓ Udført</button>' +
+        '</div>';
+      });
+      listEl.innerHTML = html;
+    }
+
+    async function addUpcomingFromForm(){
+      var titleEl = document.getElementById("ov-upcoming-title");
+      var noteEl = document.getElementById("ov-upcoming-note");
+      var dateEl = document.getElementById("ov-upcoming-date");
+      var title = titleEl.value.trim();
+      if(!title){ titleEl.focus(); return; }
+      await window.__dlhAddUpcoming({ title: title, note: noteEl.value.trim(), dueDate: dateEl.value });
+      titleEl.value = "";
+      noteEl.value = "";
+      dateEl.value = "";
+      titleEl.focus();
+      renderUpcoming();
+    }
+
     function skeleton(){
       panel.innerHTML =
         '<div class="ov-wrap">' +
+          '<div class="ov-upcoming">' +
+            '<div class="ov-upcoming-head">' +
+              '<span class="ov-upcoming-title">📌 Kommende opgaver</span>' +
+              '<span class="ov-upcoming-count" id="ov-upcoming-count"></span>' +
+            '</div>' +
+            '<div class="ov-upcoming-form">' +
+              '<input type="text" id="ov-upcoming-title" placeholder="Hvad skal laves?">' +
+              '<input type="text" id="ov-upcoming-note" placeholder="Note (valgfri)">' +
+              '<input type="date" id="ov-upcoming-date">' +
+              '<button id="ov-upcoming-add-btn" type="button">+ Tilføj</button>' +
+            '</div>' +
+            '<div class="ov-upcoming-list" id="ov-upcoming-list"></div>' +
+          '</div>' +
           '<div class="ov-summary">' +
             '<div class="ov-stat"><b id="ov-total">0</b><span>Opgaver i alt</span></div>' +
             '<div class="ov-stat ok"><b id="ov-ok">0</b><span>Udført</span></div>' +
@@ -1176,6 +1395,22 @@
           '</div>' +
           '<div id="ov-list"></div>' +
         '</div>';
+
+      document.getElementById("ov-upcoming-add-btn").addEventListener("click", addUpcomingFromForm);
+      document.getElementById("ov-upcoming-title").addEventListener("keydown", function(e){
+        if(e.key === "Enter") addUpcomingFromForm();
+      });
+      document.getElementById("ov-upcoming-note").addEventListener("keydown", function(e){
+        if(e.key === "Enter") addUpcomingFromForm();
+      });
+      document.getElementById("ov-upcoming-list").addEventListener("click", async function(e){
+        var btn = e.target.closest("[data-done-id]");
+        if(!btn) return;
+        btn.disabled = true;
+        btn.textContent = "...";
+        await window.__dlhCompleteUpcoming(btn.dataset.doneId);
+        renderUpcoming();
+      });
 
       document.getElementById("ov-search").addEventListener("input", function(){
         searchTerm = this.value.toLowerCase();
@@ -1272,9 +1507,12 @@
         built = true;
       }
       renderList();
+      renderUpcoming();
       // opdater stille i baggrunden, hvis der er en forbindelseskode
-      var fresh = await window.__dlhRefreshHistory();
-      if(fresh) renderList();
+      var freshHistory = await window.__dlhRefreshHistory();
+      if(freshHistory) renderList();
+      var freshUpcoming = await window.__dlhRefreshUpcoming();
+      if(freshUpcoming) renderUpcoming();
     };
   })();
 </script>
