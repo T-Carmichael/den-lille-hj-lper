@@ -880,6 +880,11 @@
       renderConnectionUI();
       setStatus("Forbinder...");
       await pullState(true);
+      // slår denne enheds opgavehistorik og kommende opgaver sammen med det,
+      // der allerede ligger på koden - og sender resultatet begge veje,
+      // så intet kun "kommer med" den ene vej
+      await window.__dlhRefreshHistory();
+      await window.__dlhRefreshUpcoming();
       startPolling();
     }
 
@@ -913,7 +918,11 @@
       connectWithCode(code);
     });
 
-    pullBtn.addEventListener("click", function () { pullState(true); });
+    pullBtn.addEventListener("click", async function () {
+      await pullState(true);
+      await window.__dlhRefreshHistory();
+      await window.__dlhRefreshUpcoming();
+    });
 
     copyBtn.addEventListener("click", async function () {
       try {
@@ -1009,7 +1018,9 @@
       return { ok: true, date: date };
     };
 
-    // Henter nyeste historik fra den delte kode (hvis forbundet) og lægger sammen med det lokale
+    // Henter nyeste historik fra den delte kode (hvis forbundet), lægger sammen med
+    // det lokale, og sender resultatet op igen - så data fra begge enheder når frem,
+    // også selvom de blev gemt lokalt, før enhederne var forbundet til hinanden.
     window.__dlhRefreshHistory = async function () {
       var local = loadHistoryLocal();
       if (!syncCode) return local;
@@ -1017,6 +1028,7 @@
       if (remote === null) return local;
       var merged = mergeHistory(local, remote);
       saveHistoryLocal(merged);
+      await pushHistory(merged);
       return merged;
     };
 
@@ -1104,7 +1116,8 @@
       if (syncCode) await pushUpcoming(list);
     };
 
-    // Henter nyeste kommende opgaver fra den delte kode (hvis forbundet) og lægger sammen med det lokale
+    // Henter nyeste kommende opgaver fra den delte kode (hvis forbundet), lægger sammen
+    // med det lokale, og sender resultatet op igen - samme princip som historikken ovenfor.
     window.__dlhRefreshUpcoming = async function () {
       var local = loadUpcomingLocal();
       if (!syncCode) return local;
@@ -1112,6 +1125,7 @@
       if (remote === null) return local;
       var merged = mergeUpcoming(local, remote);
       saveUpcomingLocal(merged);
+      await pushUpcoming(merged);
       return merged;
     };
 
