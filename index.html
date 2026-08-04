@@ -899,10 +899,9 @@
           email = email.trim();
           localStorage.setItem(LS_EMAIL_KEY, email);
         }
-        var res = await fetch(KVDB + "/", {
+        var res = await fetch(KVDB, {
           method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "email=" + encodeURIComponent(email)
+          body: new URLSearchParams({ email: email })
         });
         if (!res.ok) {
           var errText = (await res.text()).trim();
