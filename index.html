@@ -1270,15 +1270,14 @@
     // Henter nyeste historik fra den delte kode (hvis forbundet), lægger sammen med
     // det lokale, og sender resultatet op igen - så data fra begge enheder når frem,
     // også selvom de blev gemt lokalt, før enhederne var forbundet til hinanden.
+    // NØDSTOP (midlertidigt): denne funktion gemmer og sender IKKE længere
+    // noget automatisk - kun-læs, indtil ældre opgaver uden rigtigt id har
+    // fået et stabilt id (se migrateHistoryItemIds). Uden det kan to
+    // forskellige opgaver med ens/tom tekst blive fejlagtigt slået sammen som
+    // "samme opgave" ved en sammenlægning. Fjernes/erstattes når migreringen
+    // er på plads og verificeret.
     window.__dlhRefreshHistory = async function () {
-      var local = loadHistoryLocal();
-      if (!syncCode) return local;
-      var remote = await pullHistoryRemote();
-      if (remote === null) return local;
-      var merged = mergeHistory(local, remote);
-      saveHistoryLocal(merged);
-      await pushHistory(merged);
-      return merged;
+      return loadHistoryLocal();
     };
 
     // Sletter ét enkelt punkt fra historikken (bruges af Opgaveoverblikkets
