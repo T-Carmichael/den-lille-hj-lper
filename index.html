@@ -296,6 +296,7 @@
 
   /* ---------- overview panel ---------- */
   #panel-overview{overflow-y:auto;}
+  #panel-counting{overflow-y:auto;}
   .ov-wrap{max-width:760px;margin:0 auto;width:100%;padding:16px 16px 40px;}
   .ov-summary{
     display:grid;
@@ -625,139 +626,107 @@
     width:100%;height:100%;border:none;display:block;
   }
 
-  /* ---------- chat panels ---------- */
-  .chat-log{
-    flex:1;
-    overflow-y:auto;
-    padding:18px 16px 8px;
-    max-width:760px;
-    margin:0 auto;
-    width:100%;
-  }
-  .chat-empty{
-    height:100%;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    text-align:center;
-    padding:0 24px;
-    color:var(--sub);
-    font-size:13.5px;
-    gap:10px;
-  }
-  .chat-empty .empty-glow{
-    width:34px;height:34px;
-    border-radius:50%;
-    background:radial-gradient(circle, rgba(255,200,87,0.35), transparent 70%);
-    display:flex;align-items:center;justify-content:center;
-  }
-  .chat-empty .empty-glow::after{
-    content:"";
-    width:8px;height:8px;
-    border-radius:50%;
-    background:var(--amber);
-    box-shadow:0 0 12px 3px rgba(255,200,87,0.7);
-  }
-  .bubble-row{display:flex;margin-bottom:12px;}
-  .bubble-row.user{justify-content:flex-end;}
-  .bubble-row.assistant{justify-content:flex-start;}
-  .bubble{
-    max-width:82%;
-    padding:11px 15px;
-    border-radius:18px;
-    font-size:14.5px;
-    line-height:1.55;
-    white-space:pre-wrap;
-  }
-  .bubble.user{
-    background:linear-gradient(135deg, var(--amber), var(--amber-deep));
-    color:#241703;
-    font-weight:500;
-    border-bottom-right-radius:5px;
-  }
-  .bubble.assistant{
-    background:var(--glass);
-    border:1px solid var(--line);
-    backdrop-filter:blur(10px);
-    color:var(--ink);
-    border-bottom-left-radius:5px;
-  }
-  .bubble.assistant code{
-    background:rgba(255,255,255,0.08);
-    padding:1px 6px;
-    border-radius:5px;
-    font-size:13px;
-    color:#FFE1A8;
-  }
-  .bubble.assistant pre{
-    background:rgba(0,0,0,0.35);
-    border:1px solid var(--line);
-    padding:12px 13px;
-    border-radius:10px;
-    overflow-x:auto;
-    font-size:12.5px;
-  }
-  .bubble.assistant pre code{background:none;padding:0;color:var(--ink);}
-  .thinking{color:var(--sub);font-size:13.5px;display:flex;align-items:center;gap:8px;}
-  .spinner{
-    width:13px;height:13px;
-    border:2px solid var(--line);
-    border-top-color:var(--amber);
-    border-radius:50%;
-    animation:spin .7s linear infinite;
-  }
-  @keyframes spin{to{transform:rotate(360deg);}}
-
-  .chat-input-bar{
-    border-top:1px solid var(--line);
-    background:rgba(255,255,255,0.02);
-    backdrop-filter:blur(16px);
-    padding:12px 16px calc(12px + env(safe-area-inset-bottom));
-    flex-shrink:0;
-  }
-  .chat-input-inner{
-    max-width:760px;
-    margin:0 auto;
-    display:flex;
-    align-items:flex-end;
-    gap:8px;
+  /* ---------- optælling (depotrum) ---------- */
+  .cnt-wrap{max-width:760px;margin:0 auto;width:100%;padding:16px 16px 40px;}
+  .cnt-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
+  .cnt-title{font-family:"Sora",sans-serif;font-weight:700;font-size:15.5px;}
+  .cnt-count{font-size:11px;color:var(--sub);}
+  .cnt-hint{font-size:12.5px;color:var(--sub);margin:0 0 14px;}
+  .cnt-form{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;}
+  .cnt-form input[type="text"],
+  .cnt-form input[type="number"]{
     background:var(--glass-strong);
     border:1px solid var(--line);
-    border-radius:18px;
-    padding:6px 6px 6px 16px;
-    transition:border-color .15s ease, box-shadow .15s ease;
-  }
-  .chat-input-inner:focus-within{
-    border-color:rgba(255,200,87,0.5);
-    box-shadow:0 0 0 3px rgba(255,200,87,0.12);
-  }
-  .chat-textarea{
-    flex:1;
-    border:none;
-    background:transparent;
-    resize:none;
-    outline:none;
-    font-family:"Inter",sans-serif;
-    font-size:14.5px;
+    border-radius:10px;
+    padding:9px 12px;
+    font-size:13.5px;
     color:var(--ink);
-    max-height:120px;
-    padding:9px 0;
+    outline:none;
   }
-  .chat-textarea::placeholder{color:var(--sub);}
-  .send-btn{
+  .cnt-form input::placeholder{color:var(--sub);}
+  .cnt-form input[type="text"]{flex:1 1 150px;}
+  .cnt-form input[type="number"]{flex:0 0 92px;}
+  .cnt-photo-btn{
+    display:flex;align-items:center;gap:6px;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:9px 12px;
+    font-size:13px;
+    color:var(--sub);
+    cursor:pointer;
     flex:0 0 auto;
-    width:36px;height:36px;
-    border-radius:50%;
-    border:none;
+  }
+  .cnt-form button{
     background:linear-gradient(135deg, var(--amber), var(--amber-deep));
     color:#241703;
-    font-size:15px;
-    display:flex;align-items:center;justify-content:center;
+    border:none;
+    border-radius:10px;
+    padding:9px 16px;
+    font-weight:700;
+    font-size:13.5px;
     cursor:pointer;
-    box-shadow:0 4px 14px rgba(255,159,28,0.35);
+    flex:0 0 auto;
   }
-  .send-btn:disabled{background:var(--glass-strong);color:var(--sub);box-shadow:none;}
+  .cnt-preview{
+    display:flex;align-items:center;gap:10px;
+    margin-bottom:14px;
+    background:var(--glass);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:8px 10px;
+  }
+  .cnt-preview img{width:52px;height:52px;object-fit:cover;border-radius:8px;}
+  .cnt-preview button{
+    margin-left:auto;
+    background:none;border:1px solid var(--line);
+    border-radius:8px;color:var(--sub);
+    width:26px;height:26px;cursor:pointer;
+  }
+  .cnt-list{display:flex;flex-direction:column;gap:8px;}
+  .cnt-item{
+    display:flex;align-items:center;gap:12px;
+    background:var(--glass);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:10px 12px;
+  }
+  .cnt-item-img{width:48px;height:48px;border-radius:10px;object-fit:cover;flex:0 0 auto;}
+  .cnt-item-noimg{
+    display:flex;align-items:center;justify-content:center;
+    background:var(--glass-strong);
+    font-size:18px;
+  }
+  .cnt-item-body{flex:1;min-width:0;}
+  .cnt-item-name{font-size:13.5px;font-weight:600;}
+  .cnt-item-updated{font-size:11px;color:var(--sub);margin-top:2px;}
+  .cnt-item-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
+  .cnt-step{
+    width:26px;height:26px;border-radius:8px;
+    border:1px solid var(--line);
+    background:var(--glass-strong);
+    color:var(--ink);
+    font-size:15px;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .cnt-qty{font-size:14px;font-weight:700;min-width:22px;text-align:center;}
+  .cnt-rephoto{
+    width:26px;height:26px;border-radius:8px;
+    border:1px solid var(--line);
+    background:var(--glass-strong);
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;font-size:13px;
+  }
+  .cnt-delete{
+    width:26px;height:26px;border-radius:8px;
+    border:1px solid var(--line);
+    background:var(--glass-strong);
+    color:var(--sub);
+    cursor:pointer;
+  }
+  .cnt-delete:hover{color:#FF8F70;border-color:rgba(255,143,112,0.5);}
+  .cnt-empty{color:var(--sub);font-size:12.5px;padding:4px 2px;}
 </style>
 </head>
 <body>
@@ -795,7 +764,7 @@
       <div class="tabs" id="tabs">
         <button class="tab-btn active" data-panel="rapport">📋 Rapport</button>
         <button class="tab-btn" data-panel="overview">🗂️ Opgaveoverblik</button>
-        <button class="tab-btn" data-panel="structure">🗂️ Struktur &amp; optimering</button>
+        <button class="tab-btn" data-panel="counting">📦 Optælling</button>
       </div>
     </div>
   </div>
@@ -831,7 +800,7 @@
 
     <div class="panel" id="panel-overview" data-mode="overview"></div>
 
-    <div class="panel" id="panel-structure" data-mode="structure"></div>
+    <div class="panel" id="panel-counting" data-mode="counting"></div>
   </div>
 
 <script>
@@ -847,6 +816,9 @@
     });
     if(target === "overview" && typeof window.__dlhRenderOverview === "function"){
       window.__dlhRenderOverview();
+    }
+    if(target === "counting" && typeof window.__dlhRenderCounting === "function"){
+      window.__dlhRenderCounting();
     }
   });
 
@@ -1415,131 +1387,302 @@
       return merged;
     };
 
+    // ---------- depotrum / optælling (til Optælling-fanen) ----------
+    // Adskilt fra "inventar" ovenfor: dette er en løbende optælling af et par
+    // faste ting i depotrummet, med et billede som bevis for hvad der er talt.
+    var LS_COUNT_KEY = "dlh-depot-count";
+
+    function loadCountLocal() {
+      try { return JSON.parse(localStorage.getItem(LS_COUNT_KEY) || "[]"); }
+      catch (e) { return []; }
+    }
+
+    function saveCountLocal(list) {
+      localStorage.setItem(LS_COUNT_KEY, JSON.stringify(list));
+    }
+
+    function mergeCount(a, b) {
+      var map = {};
+      (a || []).forEach(function (t) { map[t.id] = t; });
+      (b || []).forEach(function (t) {
+        var existing = map[t.id];
+        if (!existing || new Date(t.updatedAt) > new Date(existing.updatedAt)) map[t.id] = t;
+      });
+      return Object.keys(map).map(function (k) { return map[k]; });
+    }
+
+    async function pushCount(list) {
+      if (!syncCode) return;
+      try {
+        await fetch(SYNC_API + "/" + syncCode + "/optaelling", { method: "PUT", body: JSON.stringify(list) });
+      } catch (e) {}
+    }
+
+    async function pullCountRemote() {
+      if (!syncCode) return null;
+      try {
+        var res = await fetch(SYNC_API + "/" + syncCode + "/optaelling");
+        if (res.status === 404) return [];
+        if (!res.ok) return null;
+        return await res.json();
+      } catch (e) { return null; }
+    }
+
+    window.__dlhGetCount = function () {
+      return loadCountLocal().sort(function (x, y) { return (x.createdAt || "").localeCompare(y.createdAt || ""); });
+    };
+
+    window.__dlhAddCountItem = async function (item) {
+      var now = new Date().toISOString();
+      var entry = {
+        id: "c" + Date.now() + Math.random().toString(36).slice(2, 8),
+        name: item.name,
+        qty: item.qty || 0,
+        image: item.image || "",
+        createdAt: now,
+        updatedAt: now
+      };
+      var list = loadCountLocal().concat([entry]);
+      saveCountLocal(list);
+      if (syncCode) await pushCount(list);
+      return entry;
+    };
+
+    // delta er +1 eller -1 (kan ikke gå under 0)
+    window.__dlhAdjustCountQty = async function (id, delta) {
+      var list = loadCountLocal().map(function (t) {
+        if (t.id !== id) return t;
+        return {
+          id: t.id, name: t.name, image: t.image, createdAt: t.createdAt,
+          qty: Math.max(0, (t.qty || 0) + delta),
+          updatedAt: new Date().toISOString()
+        };
+      });
+      saveCountLocal(list);
+      if (syncCode) await pushCount(list);
+    };
+
+    window.__dlhSetCountImage = async function (id, image) {
+      var list = loadCountLocal().map(function (t) {
+        if (t.id !== id) return t;
+        return {
+          id: t.id, name: t.name, qty: t.qty, createdAt: t.createdAt,
+          image: image, updatedAt: new Date().toISOString()
+        };
+      });
+      saveCountLocal(list);
+      if (syncCode) await pushCount(list);
+    };
+
+    window.__dlhDeleteCountItem = async function (id) {
+      var list = loadCountLocal().filter(function (t) { return t.id !== id; });
+      saveCountLocal(list);
+      if (syncCode) await pushCount(list);
+    };
+
+    window.__dlhRefreshCount = async function () {
+      var local = loadCountLocal();
+      if (!syncCode) return local;
+      var remote = await pullCountRemote();
+      if (remote === null) return local;
+      var merged = mergeCount(local, remote);
+      saveCountLocal(merged);
+      await pushCount(merged);
+      return merged;
+    };
+
     renderConnectionUI();
   })();
 
-  // ---------- AI chat setup ----------
-  var MODES = {
-    structure: {
-      hint: "Spørg om prioritering, arbejdsgange eller at få overblik over opgaver.",
-      system: "Du hjælper brugeren med at strukturere og optimere opgaver, projekter og arbejdsgange - fx rapportering, to-do-lister, prioritering eller processer i en kommunal kontekst. Still ét afklarende spørgsmål hvis omfanget er uklart, ellers giv et konkret, brugbart forslag med struktur (punkter, faser eller trin). Vær praktisk, ikke teoretisk. Svar på dansk medmindre andet bedes om."
+  // ---------- Optælling-panel (depotrum) ----------
+  (function(){
+    var panel = document.getElementById("panel-counting");
+    var built = false;
+    var pendingImage = "";
+
+    function esc(s){
+      var d = document.createElement("div");
+      d.textContent = s == null ? "" : String(s);
+      return d.innerHTML;
     }
-  };
 
-  var threads = { structure: [] };
+    function formatCountDate(iso){
+      if(!iso) return "";
+      try{
+        var d = new Date(iso);
+        return "talt op " + d.toLocaleDateString("da-DK", { day: "numeric", month: "short" }) +
+          " kl. " + d.toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
+      } catch(e){ return ""; }
+    }
 
-  function escapeHtml(s){
-    var d = document.createElement("div");
-    d.textContent = s;
-    return d.innerHTML;
-  }
+    // Skalerer billedet ned, før det gemmes, så det ikke fylder for meget i
+    // localStorage og ved synkronisering (kameraets originalbillede kan let
+    // være flere MB, det behøver det ikke være her).
+    function readAndResizeImage(file){
+      return new Promise(function(resolve, reject){
+        var reader = new FileReader();
+        reader.onerror = reject;
+        reader.onload = function(){
+          var img = new Image();
+          img.onerror = reject;
+          img.onload = function(){
+            var maxDim = 640;
+            var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+            var w = Math.round(img.width * scale) || 1;
+            var h = Math.round(img.height * scale) || 1;
+            var canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL("image/jpeg", 0.6));
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
 
-  function renderContent(text){
-    var escaped = escapeHtml(text);
-    escaped = escaped.replace(/```([\s\S]*?)```/g, function(m, code){
-      return "<pre><code>" + code.replace(/^[a-zA-Z]*\n/, "") + "</code></pre>";
-    });
-    escaped = escaped.replace(/`([^`]+)`/g, "<code>$1</code>");
-    return escaped;
-  }
+    function setPreview(dataUrl){
+      pendingImage = dataUrl || "";
+      var wrap = document.getElementById("cnt-preview");
+      var img = document.getElementById("cnt-preview-img");
+      var label = document.getElementById("cnt-photo-label");
+      if(!wrap) return;
+      if(pendingImage){
+        img.src = pendingImage;
+        wrap.style.display = "flex";
+        label.textContent = "Billede valgt";
+      } else {
+        wrap.style.display = "none";
+        label.textContent = "Vælg billede";
+      }
+    }
 
-  function buildPanel(modeKey){
-    var panel = document.getElementById("panel-" + modeKey);
-    var mode = MODES[modeKey];
+    function renderCount(){
+      var listEl = document.getElementById("cnt-list");
+      if(!listEl) return;
+      var items = window.__dlhGetCount ? window.__dlhGetCount() : [];
+      document.getElementById("cnt-count").textContent =
+        items.length ? (items.length + (items.length === 1 ? " ting" : " ting")) : "";
 
-    var logId = "log-" + modeKey;
-    var inputId = "input-" + modeKey;
-    var sendId = "send-" + modeKey;
-
-    panel.innerHTML =
-      '<div class="chat-log" id="' + logId + '">' +
-        '<div class="chat-empty"><div class="empty-glow"></div>' + mode.hint + '</div>' +
-      '</div>' +
-      '<div class="chat-input-bar">' +
-        '<div class="chat-input-inner">' +
-          '<textarea class="chat-textarea" id="' + inputId + '" rows="1" placeholder="Skriv dit spørgsmål..."></textarea>' +
-          '<button class="send-btn" id="' + sendId + '" type="button">➤</button>' +
-        '</div>' +
-      '</div>';
-
-    var logEl = document.getElementById(logId);
-    var inputEl = document.getElementById(inputId);
-    var sendBtn = document.getElementById(sendId);
-
-    function renderThread(){
-      var thread = threads[modeKey];
-      if(thread.length === 0){
-        logEl.innerHTML = '<div class="chat-empty"><div class="empty-glow"></div>' + mode.hint + '</div>';
+      if(items.length === 0){
+        listEl.innerHTML = '<div class="cnt-empty">Ingen ting talt op endnu. Tilføj dem herover.</div>';
         return;
       }
       var html = "";
-      thread.forEach(function(m){
-        html += '<div class="bubble-row ' + m.role + '"><div class="bubble ' + m.role + '">' + renderContent(m.content) + '</div></div>';
+      items.forEach(function(item){
+        html += '<div class="cnt-item">' +
+          (item.image
+            ? '<img class="cnt-item-img" src="' + esc(item.image) + '" alt="">'
+            : '<div class="cnt-item-img cnt-item-noimg">📦</div>') +
+          '<div class="cnt-item-body">' +
+            '<div class="cnt-item-name">' + esc(item.name) + '</div>' +
+            '<div class="cnt-item-updated">' + esc(formatCountDate(item.updatedAt)) + '</div>' +
+          '</div>' +
+          '<div class="cnt-item-actions">' +
+            '<button class="cnt-step" type="button" data-cnt-adjust="-1" data-id="' + esc(item.id) + '">−</button>' +
+            '<span class="cnt-qty">' + item.qty + '</span>' +
+            '<button class="cnt-step" type="button" data-cnt-adjust="1" data-id="' + esc(item.id) + '">+</button>' +
+            '<label class="cnt-rephoto" title="Skift billede">🖼' +
+              '<input type="file" accept="image/*" capture="environment" data-cnt-rephoto data-id="' + esc(item.id) + '" hidden>' +
+            '</label>' +
+            '<button class="cnt-delete" type="button" data-cnt-delete data-id="' + esc(item.id) + '" title="Slet">✕</button>' +
+          '</div>' +
+        '</div>';
       });
-      logEl.innerHTML = html;
-      logEl.scrollTop = logEl.scrollHeight;
+      listEl.innerHTML = html;
     }
 
-    function setLoading(isLoading){
-      sendBtn.disabled = isLoading;
-      if(isLoading){
-        logEl.insertAdjacentHTML("beforeend",
-          '<div class="bubble-row assistant" id="loading-' + modeKey + '"><div class="bubble assistant thinking"><span class="spinner"></span>Tænker...</div></div>');
-        logEl.scrollTop = logEl.scrollHeight;
-      } else {
-        var el = document.getElementById("loading-" + modeKey);
-        if(el) el.remove();
-      }
+    async function addCountFromForm(){
+      var nameEl = document.getElementById("cnt-name");
+      var qtyEl = document.getElementById("cnt-qty");
+      var name = nameEl.value.trim();
+      if(!name){ nameEl.focus(); return; }
+      var qty = parseInt(qtyEl.value, 10);
+      await window.__dlhAddCountItem({ name: name, qty: isNaN(qty) ? 0 : qty, image: pendingImage });
+      nameEl.value = "";
+      qtyEl.value = "";
+      document.getElementById("cnt-photo-input").value = "";
+      setPreview("");
+      nameEl.focus();
+      renderCount();
     }
 
-    async function send(){
-      var text = inputEl.value.trim();
-      if(!text || sendBtn.disabled) return;
-      inputEl.value = "";
-      inputEl.style.height = "auto";
-      threads[modeKey].push({ role: "user", content: text });
-      renderThread();
-      setLoading(true);
+    function skeleton(){
+      panel.innerHTML =
+        '<div class="cnt-wrap">' +
+          '<div class="cnt-head">' +
+            '<span class="cnt-title">📦 Optælling i depotrum</span>' +
+            '<span class="cnt-count" id="cnt-count"></span>' +
+          '</div>' +
+          '<p class="cnt-hint">Tilføj de ting, I tæller op i depotrummet — navn, antal og gerne et billede.</p>' +
+          '<div class="cnt-form">' +
+            '<input type="text" id="cnt-name" placeholder="Navn på tingen">' +
+            '<input type="number" id="cnt-qty" placeholder="Antal" min="0">' +
+            '<label class="cnt-photo-btn">📷 <span id="cnt-photo-label">Vælg billede</span>' +
+              '<input type="file" id="cnt-photo-input" accept="image/*" capture="environment" hidden>' +
+            '</label>' +
+            '<button id="cnt-add-btn" type="button">+ Tilføj</button>' +
+          '</div>' +
+          '<div class="cnt-preview" id="cnt-preview" style="display:none;">' +
+            '<img id="cnt-preview-img" alt="">' +
+            '<button type="button" id="cnt-preview-clear">✕</button>' +
+          '</div>' +
+          '<div class="cnt-list" id="cnt-list"></div>' +
+        '</div>';
 
-      try {
-        var response = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            max_tokens: 1000,
-            system: mode.system,
-            messages: threads[modeKey].map(function(m){ return { role: m.role, content: m.content }; })
-          })
-        });
-        var data = await response.json();
-        var reply = (data && data.content || [])
-          .map(function(block){ return block.type === "text" ? block.text : ""; })
-          .filter(Boolean)
-          .join("\n") || "Jeg kunne ikke finde et svar. Prøv igen.";
-        threads[modeKey].push({ role: "assistant", content: reply });
-      } catch (err) {
-        threads[modeKey].push({ role: "assistant", content: "Der skete en fejl. Tjek din forbindelse og prøv igen." });
-      } finally {
-        setLoading(false);
-        renderThread();
-      }
+      document.getElementById("cnt-photo-input").addEventListener("change", async function(e){
+        var file = e.target.files && e.target.files[0];
+        if(!file) return;
+        try { setPreview(await readAndResizeImage(file)); }
+        catch(err){ setPreview(""); }
+      });
+      document.getElementById("cnt-preview-clear").addEventListener("click", function(){
+        document.getElementById("cnt-photo-input").value = "";
+        setPreview("");
+      });
+      document.getElementById("cnt-add-btn").addEventListener("click", addCountFromForm);
+      document.getElementById("cnt-name").addEventListener("keydown", function(e){
+        if(e.key === "Enter") addCountFromForm();
+      });
+
+      document.getElementById("cnt-list").addEventListener("click", async function(e){
+        var delBtn = e.target.closest("[data-cnt-delete]");
+        if(delBtn){
+          if(!confirm("Slet denne optælling?")) return;
+          await window.__dlhDeleteCountItem(delBtn.dataset.id);
+          renderCount();
+          return;
+        }
+        var stepBtn = e.target.closest("[data-cnt-adjust]");
+        if(stepBtn){
+          await window.__dlhAdjustCountQty(stepBtn.dataset.id, parseInt(stepBtn.dataset.cntAdjust, 10));
+          renderCount();
+        }
+      });
+      document.getElementById("cnt-list").addEventListener("change", async function(e){
+        var input = e.target.closest("[data-cnt-rephoto]");
+        if(!input) return;
+        var file = input.files && input.files[0];
+        if(!file) return;
+        try {
+          var dataUrl = await readAndResizeImage(file);
+          await window.__dlhSetCountImage(input.dataset.id, dataUrl);
+          renderCount();
+        } catch(err){}
+      });
     }
 
-    sendBtn.addEventListener("click", send);
-    inputEl.addEventListener("keydown", function(e){
-      if(e.key === "Enter" && !e.shiftKey){
-        e.preventDefault();
-        send();
+    window.__dlhRenderCounting = async function(){
+      if(!built){
+        skeleton();
+        built = true;
       }
-    });
-    inputEl.addEventListener("input", function(){
-      inputEl.style.height = "auto";
-      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
-    });
-  }
-
-  Object.keys(MODES).forEach(buildPanel);
+      renderCount();
+      var fresh = await window.__dlhRefreshCount();
+      if(fresh) renderCount();
+    };
+  })();
 
   // ---------- "Gem" knap (gemmer dagens opgaver til Opgaveoverblik) ----------
   document.getElementById("log-today-btn").addEventListener("click", async function(){

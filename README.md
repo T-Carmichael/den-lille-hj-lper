@@ -1,8 +1,8 @@
 # Den lille hjælper
 
 En samlet app til Norddjurs Kommune-arbejde: opgave- og tidsrapport med
-enheds-synkronisering, opgaveoverblik over tid, og tre AI-hjælpere
-(MS Office, Programmering, Struktur & optimering).
+enheds-synkronisering, opgaveoverblik over tid, og optælling i depotrum
+(navn, antal og billede pr. ting).
 
 Hele appen er én selvstændig HTML-fil (`index.html`) – ingen build-trin,
 ingen dependencies. Det eneste, der kræves for at køre den, er en browser.
