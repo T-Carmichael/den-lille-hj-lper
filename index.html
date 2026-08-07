@@ -1161,8 +1161,10 @@
     }
 
     // Nøgle for ét opgavepunkt: rigtige punkter har et id (se REPORT_HTML,
-    // ensureItemId/genItemId) - ældre punkter fra før id fandtes falder
-    // tilbage til en nøgle ud fra indhold, så de stadig kan sammenlignes.
+    // ensureItemId/genItemId, samt __dlhMigrateHistoryItemIds som giver
+    // ældre punkter ét). Bruges af sletning (__dlhDeleteHistoryItem), hvor
+    // punktet på det tidspunkt altid allerede har fået et rigtigt id, fordi
+    // Opgaveoverblik migrerer FØR knapperne overhovedet vises.
     function historyItemKey(it) {
       return it.id || ("legacy:" + (it.emne || "") + "|" + (it.krav || "") + "|" + (it.ansvarlig || ""));
     }
@@ -1173,11 +1175,20 @@
     // (baseret på hvilken side der har det seneste savedAt) vinder. Det er
     // det, der forhindrer at én enheds opgaver kan blive slettet, bare fordi
     // en anden enhed gemte noget andet samme dato.
+    //
+    // Punkter UDEN et rigtigt id (fra en enhed, der endnu ikke har åbnet
+    // Opgaveoverblik siden denne rettelse) får her en GARANTERET unik
+    // nøgle hver - de bliver altså aldrig lagt oveni hinanden, selv hvis
+    // flere har helt ens (eller tom) titel/beskrivelse. Det kan i sjældne
+    // tilfælde give en duplikeret række, man selv skal slette - men det er
+    // trygt, i modsætning til at to forskellige opgaver ved en fejl
+    // smelter sammen til én.
     function mergeHistoryItems(itemsOlder, itemsNewer) {
       var map = {};
       var order = [];
+      var legacySeq = 0;
       function add(it) {
-        var key = historyItemKey(it);
+        var key = it.id || ("legacy-unmerged:" + (legacySeq++) + ":" + Math.random().toString(36).slice(2, 8));
         if (!(key in map)) order.push(key);
         map[key] = it;
       }
@@ -1236,6 +1247,29 @@
 
     window.__dlhGetHistory = function () { return loadHistoryLocal(); };
 
+    // Giver alle ældre opgavepunkter (logget før punkter fik et rigtigt id -
+    // se REPORT_HTML: genItemId/ensureItemId) et stabilt, tilfældigt id, én
+    // gang, kun lokalt. Et punkt, der allerede har et id, røres ikke. Dette
+    // er nødvendigt for at sammenlægning på tværs af enheder kan skelne to
+    // forskellige opgaver fra hinanden, selv hvis de har ens eller tom
+    // titel/beskrivelse/ansvarlig - ellers kan de fejlagtigt blive slået
+    // sammen som "samme opgave" og én af dem forsvinde. Kaldes hver gang
+    // Opgaveoverblik åbnes (se __dlhRenderOverview).
+    window.__dlhMigrateHistoryItemIds = function () {
+      var history = loadHistoryLocal();
+      var changed = false;
+      history.forEach(function (day, di) {
+        (day.items || []).forEach(function (it, ii) {
+          if (!it.id) {
+            it.id = "h" + Date.now().toString(36) + "-" + di + "-" + ii + "-" + Math.random().toString(36).slice(2, 8);
+            changed = true;
+          }
+        });
+      });
+      if (changed) saveHistoryLocal(history);
+      return changed;
+    };
+
     // Gemmer dagens (eller den valgte dato's) opgaver fra rapport-formularen ind i overblikket
     window.__dlhLogToday = async function () {
       var state = getReportState();
@@ -1270,14 +1304,19 @@
     // Henter nyeste historik fra den delte kode (hvis forbundet), lægger sammen med
     // det lokale, og sender resultatet op igen - så data fra begge enheder når frem,
     // også selvom de blev gemt lokalt, før enhederne var forbundet til hinanden.
-    // NØDSTOP (midlertidigt): denne funktion gemmer og sender IKKE længere
-    // noget automatisk - kun-læs, indtil ældre opgaver uden rigtigt id har
-    // fået et stabilt id (se migrateHistoryItemIds). Uden det kan to
-    // forskellige opgaver med ens/tom tekst blive fejlagtigt slået sammen som
-    // "samme opgave" ved en sammenlægning. Fjernes/erstattes når migreringen
-    // er på plads og verificeret.
+    // Sikker at bruge nu: __dlhMigrateHistoryItemIds (kaldt af
+    // __dlhRenderOverview, FØR denne funktion) sørger for at alle punkter har
+    // et rigtigt id, så mergeHistoryItems aldrig behøver falde tilbage til at
+    // gætte ud fra tekst.
     window.__dlhRefreshHistory = async function () {
-      return loadHistoryLocal();
+      var local = loadHistoryLocal();
+      if (!syncCode) return local;
+      var remote = await pullHistoryRemote();
+      if (remote === null) return local;
+      var merged = mergeHistory(local, remote);
+      saveHistoryLocal(merged);
+      await pushHistory(merged);
+      return merged;
     };
 
     // Sletter ét enkelt punkt fra historikken (bruges af Opgaveoverblikkets
@@ -2460,6 +2499,8 @@
         skeleton();
         built = true;
       }
+      // giv ældre opgaver uden id ét, FØR noget som helst sammenlægges
+      if(window.__dlhMigrateHistoryItemIds) window.__dlhMigrateHistoryItemIds();
       renderList();
       renderUpcoming();
       renderWeekOverview();
