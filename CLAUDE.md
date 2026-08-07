@@ -28,8 +28,8 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   fra `index.html` på adressen `/api/sync/<kode>/<nøgle>`. En
   "forbindelseskode" er bare et "rum" i lageret — genereres lokalt i
   browseren (ingen server-kald, ingen e-mail/konto nødvendig). Rapport
-  (`report`), historik (`history`), kommende opgaver (`upcoming`), inventar
-  (`inventory`) og depot-optælling (`optaelling`) synkroniseres denne vej.
+  (`report`), historik (`history`), kommende opgaver (`upcoming`) og
+  depot-optælling (`optaelling`) synkroniseres denne vej.
   - Virker kun når siden faktisk er deployet på Netlify (edge-funktionen
     kører ikke ved lokal `npx serve` eller ved at åbne filen direkte) —
     brug `netlify dev` hvis sync skal testes lokalt.
@@ -39,10 +39,10 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   "Struktur & optimering"): til at tælle op i depotrummet — navn, antal og
   et valgfrit billede pr. ting. Billeder skaleres ned til maks. 640px/JPEG i
   browseren (canvas), før de gemmes i `localStorage` og synkroniseres, så de
-  ikke fylder for meget. Adskilt fra "inventar" (find i
-  `window.__dlhGetInventory` m.fl., bruges af Opgaveoverblik-fanens
-  lager-liste med min.-advarsel) — optælling har billeder, ingen
-  min.-advarsel, og er tænkt til et par faste ting, man tjekker jævnligt.
+  ikke fylder for meget. Der har tidligere også ligget en simplere
+  "Depotrum – inventar"-liste (vare/antal/lav-lager-advarsel) inde i
+  Opgaveoverblik-fanen — den er fjernet igen, da Optælling-fanen dækker
+  behovet.
 - **Del/installér**: Web Share API + download-fallback, samt en indlejret
   web app manifest (data-URI) til "Installér som app".
 

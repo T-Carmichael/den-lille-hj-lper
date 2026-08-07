@@ -447,94 +447,6 @@
   }
   .ov-upcoming-done-btn:disabled{opacity:.5;cursor:default;}
   .ov-upcoming-empty{color:var(--sub);font-size:12.5px;padding:4px 2px;}
-  .ov-inv{
-    background:var(--glass);
-    border:1px solid var(--line);
-    border-radius:14px;
-    padding:14px;
-    margin-bottom:18px;
-  }
-  .ov-inv-head{
-    display:flex;
-    align-items:baseline;
-    justify-content:space-between;
-    gap:8px;
-    margin-bottom:10px;
-  }
-  .ov-inv-title{font-family:"Sora",sans-serif;font-weight:700;font-size:14.5px;}
-  .ov-inv-count{font-size:11px;color:var(--sub);}
-  .ov-inv-form{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
-  .ov-inv-form input{
-    background:var(--glass-strong);
-    border:1px solid var(--line);
-    border-radius:10px;
-    padding:8px 11px;
-    color:var(--ink);
-    font-size:13px;
-  }
-  .ov-inv-form input::placeholder{color:var(--sub);}
-  .ov-inv-form input[type="text"]{flex:1 1 150px;}
-  .ov-inv-form input[type="number"]{flex:0 0 92px;}
-  .ov-inv-form button{
-    background:var(--amber-soft);
-    border:1px solid rgba(255,200,87,0.5);
-    color:var(--ink);
-    font-size:12.5px;font-weight:700;
-    padding:8px 14px;
-    border-radius:10px;
-    cursor:pointer;
-    white-space:nowrap;
-  }
-  .ov-inv-list{display:flex;flex-direction:column;gap:7px;}
-  .ov-inv-item{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:8px;
-    background:var(--glass-strong);
-    border:1px solid var(--line);
-    border-radius:12px;
-    padding:9px 12px;
-    flex-wrap:wrap;
-  }
-  .ov-inv-item-name{font-size:13.5px;font-weight:600;}
-  .ov-inv-item-min{font-size:11px;color:var(--sub);margin-top:2px;}
-  .ov-inv-item-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
-  .ov-inv-step{
-    background:var(--glass);
-    border:1px solid var(--line);
-    color:var(--ink);
-    font-size:14px;font-weight:700;
-    width:28px;height:28px;
-    border-radius:8px;
-    cursor:pointer;
-    line-height:1;
-  }
-  .ov-inv-qty{font-size:14px;font-weight:700;min-width:26px;text-align:center;}
-  .ov-inv-pill{
-    flex:0 0 auto;
-    font-size:10.5px;
-    font-weight:700;
-    padding:3px 9px;
-    border-radius:999px;
-    white-space:nowrap;
-  }
-  .ov-inv-pill.ok{background:rgba(124,217,154,0.16);color:#7CD99A;}
-  .ov-inv-pill.low{background:var(--amber-soft);color:var(--amber);}
-  .ov-inv-pill.empty{background:rgba(255,143,112,0.16);color:#FF8F70;}
-  .ov-inv-delete{
-    flex:0 0 auto;
-    background:none;
-    border:1px solid var(--line);
-    color:var(--sub);
-    font-size:12px;
-    line-height:1;
-    padding:5px 8px;
-    border-radius:8px;
-    cursor:pointer;
-  }
-  .ov-inv-delete:hover{color:#FF8F70;border-color:rgba(255,143,112,0.5);}
-  .ov-inv-empty{color:var(--sub);font-size:12.5px;padding:4px 2px;}
   .ov-day{margin-bottom:18px;}
   .ov-day-head{
     display:flex;
@@ -1292,104 +1204,9 @@
       return merged;
     };
 
-    // ---------- depotrum / inventar (til Opgaveoverblik-fanen) ----------
-    var LS_INVENTORY_KEY = "dlh-inventory";
-
-    function loadInventoryLocal() {
-      try { return JSON.parse(localStorage.getItem(LS_INVENTORY_KEY) || "[]"); }
-      catch (e) { return []; }
-    }
-
-    function saveInventoryLocal(list) {
-      localStorage.setItem(LS_INVENTORY_KEY, JSON.stringify(list));
-    }
-
-    // Slår to lister sammen: nyeste "updatedAt" vinder pr. vare-id. Slettede
-    // varer fjernes helt (i modsætning til kommende opgaver er der ingen
-    // grund til at gemme et "spøgelses"-punkt for en vare, der er fjernet).
-    function mergeInventory(a, b) {
-      var map = {};
-      (a || []).forEach(function (t) { map[t.id] = t; });
-      (b || []).forEach(function (t) {
-        var existing = map[t.id];
-        if (!existing || new Date(t.updatedAt) > new Date(existing.updatedAt)) map[t.id] = t;
-      });
-      return Object.keys(map).map(function (k) { return map[k]; });
-    }
-
-    async function pushInventory(list) {
-      if (!syncCode) return;
-      try {
-        await fetch(SYNC_API + "/" + syncCode + "/inventory", { method: "PUT", body: JSON.stringify(list) });
-      } catch (e) {}
-    }
-
-    async function pullInventoryRemote() {
-      if (!syncCode) return null;
-      try {
-        var res = await fetch(SYNC_API + "/" + syncCode + "/inventory");
-        if (res.status === 404) return [];
-        if (!res.ok) return null;
-        return await res.json();
-      } catch (e) { return null; }
-    }
-
-    window.__dlhGetInventory = function () {
-      return loadInventoryLocal().sort(function (x, y) {
-        return (x.name || "").localeCompare(y.name || "", "da");
-      });
-    };
-
-    window.__dlhAddInventoryItem = async function (item) {
-      var now = new Date().toISOString();
-      var entry = {
-        id: "i" + Date.now() + Math.random().toString(36).slice(2, 8),
-        name: item.name,
-        qty: item.qty || 0,
-        minQty: item.minQty || 0,
-        createdAt: now,
-        updatedAt: now
-      };
-      var list = loadInventoryLocal().concat([entry]);
-      saveInventoryLocal(list);
-      if (syncCode) await pushInventory(list);
-      return entry;
-    };
-
-    // delta er +1 eller -1 (kan ikke gå under 0)
-    window.__dlhAdjustInventoryQty = async function (id, delta) {
-      var list = loadInventoryLocal().map(function (t) {
-        if (t.id !== id) return t;
-        return {
-          id: t.id, name: t.name, minQty: t.minQty, createdAt: t.createdAt,
-          qty: Math.max(0, (t.qty || 0) + delta),
-          updatedAt: new Date().toISOString()
-        };
-      });
-      saveInventoryLocal(list);
-      if (syncCode) await pushInventory(list);
-    };
-
-    window.__dlhDeleteInventoryItem = async function (id) {
-      var list = loadInventoryLocal().filter(function (t) { return t.id !== id; });
-      saveInventoryLocal(list);
-      if (syncCode) await pushInventory(list);
-    };
-
-    window.__dlhRefreshInventory = async function () {
-      var local = loadInventoryLocal();
-      if (!syncCode) return local;
-      var remote = await pullInventoryRemote();
-      if (remote === null) return local;
-      var merged = mergeInventory(local, remote);
-      saveInventoryLocal(merged);
-      await pushInventory(merged);
-      return merged;
-    };
-
     // ---------- depotrum / optælling (til Optælling-fanen) ----------
-    // Adskilt fra "inventar" ovenfor: dette er en løbende optælling af et par
-    // faste ting i depotrummet, med et billede som bevis for hvad der er talt.
+    // Løbende optælling af et par faste ting i depotrummet, med et billede
+    // som bevis for hvad der er talt.
     var LS_COUNT_KEY = "dlh-depot-count";
 
     function loadCountLocal() {
@@ -1875,63 +1692,6 @@
       renderUpcoming();
     }
 
-    // ---------- depotrum / inventar ----------
-    function inventoryStatus(item){
-      if(item.qty <= 0) return { cls: "empty", label: "Tomt" };
-      if(item.minQty > 0 && item.qty <= item.minQty) return { cls: "low", label: "Lavt lager" };
-      return { cls: "ok", label: "OK" };
-    }
-
-    function renderInventory(){
-      var listEl = document.getElementById("ov-inv-list");
-      if(!listEl) return;
-      var items = window.__dlhGetInventory ? window.__dlhGetInventory() : [];
-      document.getElementById("ov-inv-count").textContent =
-        items.length ? (items.length + (items.length === 1 ? " vare" : " varer")) : "";
-
-      if(items.length === 0){
-        listEl.innerHTML = '<div class="ov-inv-empty">Ingen varer registreret endnu.</div>';
-        return;
-      }
-      var html = "";
-      items.forEach(function(item){
-        var st = inventoryStatus(item);
-        html += '<div class="ov-inv-item">' +
-          '<div><div class="ov-inv-item-name">' + esc(item.name) + '</div>' +
-          (item.minQty > 0 ? '<div class="ov-inv-item-min">Advarsel ved ' + item.minQty + ' stk.</div>' : '') +
-          '</div>' +
-          '<div class="ov-inv-item-actions">' +
-            '<span class="ov-inv-pill ' + st.cls + '">' + st.label + '</span>' +
-            '<button class="ov-inv-step" type="button" data-inv-adjust="-1" data-id="' + esc(item.id) + '">−</button>' +
-            '<span class="ov-inv-qty">' + item.qty + '</span>' +
-            '<button class="ov-inv-step" type="button" data-inv-adjust="1" data-id="' + esc(item.id) + '">+</button>' +
-            '<button class="ov-inv-delete" type="button" data-inv-delete data-id="' + esc(item.id) + '" title="Slet vare">✕</button>' +
-          '</div>' +
-        '</div>';
-      });
-      listEl.innerHTML = html;
-    }
-
-    async function addInventoryFromForm(){
-      var nameEl = document.getElementById("ov-inv-name");
-      var qtyEl = document.getElementById("ov-inv-qty-input");
-      var minEl = document.getElementById("ov-inv-min-input");
-      var name = nameEl.value.trim();
-      if(!name){ nameEl.focus(); return; }
-      var qty = parseInt(qtyEl.value, 10);
-      var minQty = parseInt(minEl.value, 10);
-      await window.__dlhAddInventoryItem({
-        name: name,
-        qty: isNaN(qty) ? 0 : qty,
-        minQty: isNaN(minQty) ? 0 : minQty
-      });
-      nameEl.value = "";
-      qtyEl.value = "";
-      minEl.value = "";
-      nameEl.focus();
-      renderInventory();
-    }
-
     function skeleton(){
       panel.innerHTML =
         '<div class="ov-wrap">' +
@@ -1957,19 +1717,6 @@
           '<div class="ov-week">' +
             '<div class="ov-week-title">🗓️ Ugentligt timeoverblik</div>' +
             '<div id="ov-week-list"></div>' +
-          '</div>' +
-          '<div class="ov-inv">' +
-            '<div class="ov-inv-head">' +
-              '<span class="ov-inv-title">📦 Depotrum – inventar</span>' +
-              '<span class="ov-inv-count" id="ov-inv-count"></span>' +
-            '</div>' +
-            '<div class="ov-inv-form">' +
-              '<input type="text" id="ov-inv-name" placeholder="Varenavn">' +
-              '<input type="number" id="ov-inv-qty-input" placeholder="Antal" min="0">' +
-              '<input type="number" id="ov-inv-min-input" placeholder="Advarsel ved (valgfri)" min="0">' +
-              '<button id="ov-inv-add-btn" type="button">+ Tilføj</button>' +
-            '</div>' +
-            '<div class="ov-inv-list" id="ov-inv-list"></div>' +
           '</div>' +
           '<div class="ov-controls">' +
             '<input class="ov-search" id="ov-search" placeholder="Søg i opgaver, beskrivelse, ansvarlig...">' +
@@ -1999,25 +1746,6 @@
         await window.__dlhCompleteUpcoming(btn.dataset.doneId);
         renderUpcoming();
         renderList();
-      });
-
-      document.getElementById("ov-inv-add-btn").addEventListener("click", addInventoryFromForm);
-      document.getElementById("ov-inv-name").addEventListener("keydown", function(e){
-        if(e.key === "Enter") addInventoryFromForm();
-      });
-      document.getElementById("ov-inv-list").addEventListener("click", async function(e){
-        var stepBtn = e.target.closest("[data-inv-adjust]");
-        if(stepBtn){
-          await window.__dlhAdjustInventoryQty(stepBtn.dataset.id, parseInt(stepBtn.dataset.invAdjust, 10));
-          renderInventory();
-          return;
-        }
-        var delBtn = e.target.closest("[data-inv-delete]");
-        if(delBtn){
-          if(!confirm("Slet denne vare fra lageroversigten?")) return;
-          await window.__dlhDeleteInventoryItem(delBtn.dataset.id);
-          renderInventory();
-        }
       });
 
       document.getElementById("ov-search").addEventListener("input", function(){
@@ -2182,14 +1910,11 @@
       renderList();
       renderUpcoming();
       renderWeekOverview();
-      renderInventory();
       // opdater stille i baggrunden, hvis der er en forbindelseskode
       var freshHistory = await window.__dlhRefreshHistory();
       if(freshHistory){ renderList(); renderWeekOverview(); }
       var freshUpcoming = await window.__dlhRefreshUpcoming();
       if(freshUpcoming) renderUpcoming();
-      var freshInventory = await window.__dlhRefreshInventory();
-      if(freshInventory) renderInventory();
     };
   })();
 </script>
