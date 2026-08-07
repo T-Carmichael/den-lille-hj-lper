@@ -65,8 +65,7 @@
     margin-bottom:6px;
   }
   .brand-text-block{min-width:0;flex:1 1 auto;}
-  .share-app-btn{
-    margin-left:auto;
+  .share-app-btn,.backup-btn{
     flex:0 0 auto;
     display:flex;
     align-items:center;
@@ -76,7 +75,7 @@
     border:1px solid var(--line);
     color:var(--ink);
     font-family:"Inter",sans-serif;
-    font-size:12.5px;
+    font-size:14px;
     font-weight:600;
     width:30px;height:30px;
     padding:0;
@@ -84,7 +83,8 @@
     cursor:pointer;
     transition:border-color .15s ease, box-shadow .15s ease;
   }
-  .share-app-btn:hover{
+  .backup-btn{margin-left:auto;}
+  .share-app-btn:hover,.backup-btn:hover{
     border-color:rgba(255,200,87,0.5);
     box-shadow:0 0 0 3px rgba(255,200,87,0.1);
   }
@@ -758,6 +758,7 @@
         <div class="brand-text-block">
           <h1 class="app-title">Den lille hjælper</h1>
         </div>
+        <button class="backup-btn" id="backup-btn" type="button" title="Lav backup af data (rører intet, synkroniserer intet)">💾</button>
         <button class="share-app-btn" id="share-app-btn" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"></line></svg>
         </button>
@@ -870,6 +871,84 @@
     } catch (err) {
       alert("Kunne ikke dele appen automatisk på denne enhed. Prøv i stedet browserens egen Del-knap (fx pil-ikonet eller de tre prikker øverst) og vælg 'Del side'.");
     }
+  });
+
+  // ---------- backup-knap ----------
+  // Læser KUN fra localStorage - rører intet og synkroniserer intet. Sikker
+  // at bruge selv på en enhed, man mistænker for at have data, andre enheder
+  // ikke har (fx efter en periode uden at have åbnet appen), fordi den ikke
+  // starter nogen sammenlægning med serveren sådan som Opgaveoverblik-fanen
+  // gør, når den åbnes.
+  document.getElementById("backup-btn").addEventListener("click", async function () {
+    function readJSON(key) {
+      try { return JSON.parse(localStorage.getItem(key) || "[]"); }
+      catch (e) { return []; }
+    }
+    var history = readJSON("dlh-task-history");
+    var upcoming = readJSON("dlh-upcoming-tasks");
+    var rooms = readJSON("dlh-depot-rooms");
+    var count = readJSON("dlh-depot-count");
+    var syncCode = localStorage.getItem("dlh-sync-code") || "";
+
+    var dateSet = {};
+    var total = 0, ok = 0, afv = 0;
+    history.forEach(function (day) {
+      dateSet[day.date] = true;
+      (day.items || []).forEach(function (it) {
+        total++;
+        if (it.status === "OK") ok++;
+        if (it.status === "AFV") afv++;
+      });
+    });
+    upcoming.filter(function (t) { return t.deleted && t.completedAt; }).forEach(function (t) {
+      var d = (t.completedAt || "").slice(0, 10);
+      if (d) dateSet[d] = true;
+      total++; ok++;
+    });
+
+    var summary = "Backup taget " + new Date().toLocaleString("da-DK") + "\n\n" +
+      "Forbindelseskode: " + (syncCode || "(ingen)") + "\n" +
+      "Historik: " + Object.keys(dateSet).length + " dage logget, " + total + " opgaver ialt (" + ok + " udført, " + afv + " afventer)\n" +
+      "Kommende opgaver (ikke fuldførte): " + upcoming.filter(function (t) { return !t.deleted; }).length + "\n" +
+      "Depotrum: " + rooms.filter(function (r) { return !r.deleted; }).length + " rum, " +
+      count.filter(function (t) { return !t.deleted; }).length + " ting talt op";
+
+    alert(summary);
+
+    var backup = {
+      exportedAt: new Date().toISOString(),
+      syncCode: syncCode,
+      history: history,
+      upcoming: upcoming,
+      rooms: rooms,
+      count: count
+    };
+    var json = JSON.stringify(backup, null, 2);
+    var filename = "den-lille-hjaelper-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+
+    try {
+      if (typeof navigator.share === "function") {
+        var shareBlob = new Blob([json], { type: "application/json" });
+        var shareFile = new File([shareBlob], filename, { type: "application/json" });
+        if (typeof navigator.canShare === "function" && navigator.canShare({ files: [shareFile] })) {
+          try {
+            await navigator.share({ files: [shareFile], title: "Backup af Den lille hjælper" });
+            return;
+          } catch (shareErr) {
+            if (shareErr && shareErr.name === "AbortError") return;
+          }
+        }
+      }
+    } catch (e) {}
+
+    var dlUrl = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+    var dlLink = document.createElement("a");
+    dlLink.href = dlUrl;
+    dlLink.download = filename;
+    document.body.appendChild(dlLink);
+    dlLink.click();
+    document.body.removeChild(dlLink);
+    setTimeout(function () { URL.revokeObjectURL(dlUrl); }, 4000);
   });
 
   // ---------- load original report tool into iframe, untouched ----------
