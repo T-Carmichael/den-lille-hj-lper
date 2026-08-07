@@ -461,6 +461,20 @@
   .ov-pill.ok{background:rgba(124,217,154,0.16);color:#7CD99A;}
   .ov-pill.afv{background:rgba(255,143,112,0.16);color:#FF8F70;}
   .ov-pill.blank{background:rgba(255,255,255,0.08);color:var(--sub);}
+  .ov-task-actions{flex:0 0 auto;display:flex;align-items:center;gap:6px;}
+  .ov-task-delete{
+    flex:0 0 auto;
+    background:none;
+    border:1px solid var(--line);
+    color:var(--sub);
+    font-size:12px;
+    line-height:1;
+    padding:5px 8px;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  .ov-task-delete:hover{color:#FF8F70;border-color:rgba(255,143,112,0.5);}
+  .ov-task-delete:disabled{opacity:.5;cursor:default;}
   .ov-task-note{font-size:12.5px;color:var(--ink);margin-top:6px;border-top:1px solid var(--line);padding-top:6px;}
   .ov-task-note b{color:var(--sub);font-weight:600;}
   .ov-empty{
@@ -1043,6 +1057,17 @@
       return merged;
     };
 
+    // Sletter ét enkelt punkt fra historikken (bruges af Opgaveoverblikkets
+    // "✕"-knap, fx til at rydde op i dubletter).
+    window.__dlhDeleteHistoryItem = async function (date, idx) {
+      var history = loadHistoryLocal();
+      var day = history.filter(function (d) { return d.date === date; })[0];
+      if (!day || !day.items || idx < 0 || idx >= day.items.length) return;
+      day.items.splice(idx, 1);
+      saveHistoryLocal(history);
+      if (syncCode) await pushHistory(history);
+    };
+
     // ---------- kommende opgaver (til Opgaveoverblik-fanen) ----------
     // Opgaver du allerede nu ved kommer, men som ikke skal på dagens rapport endnu.
     // Deles mellem enheder via samme forbindelseskode som rapporten og historikken.
@@ -1130,6 +1155,15 @@
           createdAt: t.createdAt, updatedAt: now, deleted: true, completedAt: now
         };
       });
+      saveUpcomingLocal(list);
+      if (syncCode) await pushUpcoming(list);
+    };
+
+    // Fjerner en fuldført kommende opgave helt og permanent fra listen (bruges
+    // af Opgaveoverblikkets "✕"-knap) - i modsætning til __dlhCompleteUpcoming,
+    // som bare skjuler den, sletter denne den for altid.
+    window.__dlhDeleteUpcomingEntry = async function (id) {
+      var list = loadUpcomingLocal().filter(function (t) { return t.id !== id; });
       saveUpcomingLocal(list);
       if (syncCode) await pushUpcoming(list);
     };
@@ -1455,6 +1489,18 @@
         renderList();
         btn.textContent = "🔄 Opdater";
       });
+      document.getElementById("ov-list").addEventListener("click", async function(e){
+        var btn = e.target.closest(".ov-task-delete");
+        if(!btn) return;
+        if(!confirm("Slet denne opgave permanent? Det kan ikke fortrydes.")) return;
+        btn.disabled = true;
+        if(btn.dataset.upid){
+          await window.__dlhDeleteUpcomingEntry(btn.dataset.upid);
+        } else {
+          await window.__dlhDeleteHistoryItem(btn.dataset.date, parseInt(btn.dataset.idx, 10));
+        }
+        renderList();
+      });
     }
 
     // Lægger fuldførte kommende opgaver ind i dags-oversigten (under den dato,
@@ -1467,13 +1513,24 @@
 
       var byDate = {};
       history.forEach(function(day){
-        byDate[day.date] = { date: day.date, montor: day.montor, items: (day.items || []).slice() };
+        // _historyIdx husker punktets plads i den gemte historik, så vi ved
+        // præcis hvad der skal slettes, hvis man trykker "✕" på det.
+        var items = (day.items || []).map(function(it, i){
+          var copy = {};
+          for(var k in it){ copy[k] = it[k]; }
+          copy._historyIdx = i;
+          return copy;
+        });
+        byDate[day.date] = { date: day.date, montor: day.montor, items: items };
       });
       completedUpcoming.forEach(function(t){
         var d = (t.completedAt || "").slice(0, 10);
         if(!d) return;
         if(!byDate[d]) byDate[d] = { date: d, montor: "", items: [] };
-        byDate[d].items.push({ emne: t.title, krav: t.note || "", status: "OK", ansvarlig: "", anmaerkning: "" });
+        byDate[d].items.push({
+          emne: t.title, krav: t.note || "", status: "OK", ansvarlig: "", anmaerkning: "",
+          _upcomingId: t.id
+        });
       });
 
       return Object.keys(byDate).map(function(k){ return byDate[k]; })
@@ -1528,11 +1585,17 @@
             (d.day.montor ? '<span class="ov-day-meta">· ' + esc(d.day.montor) + '</span>' : '') +
           '</div>';
         d.items.forEach(function(it){
+          var delAttrs = it._upcomingId
+            ? ' data-upid="' + esc(it._upcomingId) + '"'
+            : ' data-date="' + esc(d.day.date) + '" data-idx="' + it._historyIdx + '"';
           html += '<div class="ov-task">' +
             '<div class="ov-task-top">' +
               '<div><div class="ov-task-title">' + esc(it.emne || "Uden titel") + '</div>' +
               (it.krav ? '<div class="ov-task-desc">' + esc(it.krav) + '</div>' : '') + '</div>' +
-              '<span class="ov-pill ' + statusClass(it.status) + '">' + statusLabel(it.status) + '</span>' +
+              '<div class="ov-task-actions">' +
+                '<span class="ov-pill ' + statusClass(it.status) + '">' + statusLabel(it.status) + '</span>' +
+                '<button class="ov-task-delete" type="button"' + delAttrs + ' title="Slet opgave">✕</button>' +
+              '</div>' +
             '</div>' +
             (it.ansvarlig || it.anmaerkning
               ? '<div class="ov-task-note">' +
