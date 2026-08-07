@@ -759,6 +759,8 @@
           <h1 class="app-title">Den lille hjælper</h1>
         </div>
         <button class="backup-btn" id="backup-btn" type="button" title="Lav backup af data (rører intet, synkroniserer intet)">💾</button>
+        <button class="backup-btn" id="restore-btn" type="button" title="Gendan fra backup-fil (lægges sammen med det, der allerede er der - overskriver intet)">📥</button>
+        <input type="file" id="restore-input" accept="application/json" hidden>
         <button class="share-app-btn" id="share-app-btn" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"></line></svg>
         </button>
@@ -949,6 +951,38 @@
     dlLink.click();
     document.body.removeChild(dlLink);
     setTimeout(function () { URL.revokeObjectURL(dlUrl); }, 4000);
+  });
+
+  // ---------- gendan-knap ----------
+  // Lægger en tidligere gemt backup-fil sammen med det, der allerede er der
+  // (via __dlhImportBackup, som bruger de samme sammenlægningsfunktioner som
+  // resten af appen) - overskriver aldrig, kun forener.
+  document.getElementById("restore-btn").addEventListener("click", function () {
+    document.getElementById("restore-input").click();
+  });
+  document.getElementById("restore-input").addEventListener("change", async function (e) {
+    var file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      var text = await file.text();
+      var backup = JSON.parse(text);
+      if (!backup || (!backup.history && !backup.upcoming && !backup.rooms && !backup.count)) {
+        alert("Denne fil ligner ikke en gyldig backup-fil fra appen.");
+        return;
+      }
+      var result = await window.__dlhImportBackup(backup);
+      alert(
+        "Gendannelse gennemført.\n\n" +
+        "Historik: " + (result.history !== undefined ? result.history + " dage ialt" : "ikke ændret") + "\n" +
+        "Kommende opgaver: " + (result.upcoming !== undefined ? result.upcoming + " ialt" : "ikke ændret") + "\n" +
+        "Depotrum: " + (result.rooms !== undefined ? result.rooms + " rum" : "ikke ændret") + "\n" +
+        "Optælling: " + (result.count !== undefined ? result.count + " ting" : "ikke ændret") + "\n\n" +
+        "Åbn Opgaveoverblik for at se det samlede resultat."
+      );
+    } catch (err) {
+      alert("Kunne ikke læse filen. Er du sikker på det er en backup-fil fra denne app?");
+    }
   });
 
   // ---------- load original report tool into iframe, untouched ----------
@@ -1706,6 +1740,40 @@
       });
       saveCountLocal(updated);
       await pushCount(updated);
+    };
+
+    // Lægger en tidligere eksporteret backup-fil (se backup-knappen) sammen
+    // med det, der allerede ligger lokalt/centralt - via de samme
+    // sammenlægningsfunktioner som resten af appen bruger, så intet
+    // overskrives, kun forenes. Bruges af "📥 Gendan fra backup-fil".
+    window.__dlhImportBackup = async function (backup) {
+      var result = {};
+      if (backup.history) {
+        var mergedHistory = mergeHistory(loadHistoryLocal(), backup.history);
+        saveHistoryLocal(mergedHistory);
+        window.__dlhMigrateHistoryItemIds();
+        if (syncCode) await pushHistory(loadHistoryLocal());
+        result.history = loadHistoryLocal().length;
+      }
+      if (backup.upcoming) {
+        var mergedUpcoming = mergeUpcoming(loadUpcomingLocal(), backup.upcoming);
+        saveUpcomingLocal(mergedUpcoming);
+        if (syncCode) await pushUpcoming(mergedUpcoming);
+        result.upcoming = mergedUpcoming.length;
+      }
+      if (backup.rooms) {
+        var mergedRooms = mergeById(loadRoomsLocal(), backup.rooms);
+        saveRoomsLocal(mergedRooms);
+        if (syncCode) await pushRooms(mergedRooms);
+        result.rooms = mergedRooms.length;
+      }
+      if (backup.count) {
+        var mergedCount = mergeById(loadCountLocal(), backup.count);
+        saveCountLocal(mergedCount);
+        if (syncCode) await pushCount(mergedCount);
+        result.count = mergedCount.length;
+      }
+      return result;
     };
 
     renderConnectionUI();
