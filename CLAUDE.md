@@ -26,23 +26,43 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
 - **Enheds-sync**: bruger Netlify Blobs (indbygget nøgle/værdi-lager på selve
   Netlify-sitet) via edge-funktionen `netlify/edge-functions/sync.js`, kaldt
   fra `index.html` på adressen `/api/sync/<kode>/<nøgle>`. En
-  "forbindelseskode" er bare et "rum" i lageret — genereres lokalt i
-  browseren (ingen server-kald, ingen e-mail/konto nødvendig). Rapport
-  (`report`), historik (`history`), kommende opgaver (`upcoming`) og
+  "forbindelseskode" (bruges som stikord for "en delt kode", ikke et fysisk
+  rum) er bare en nøgle i lageret — genereres lokalt i browseren (ingen
+  server-kald, ingen e-mail/konto nødvendig). Rapport (`report`), historik
+  (`history`), kommende opgaver (`upcoming`), depotrum (`rum`) og
   depot-optælling (`optaelling`) synkroniseres denne vej.
   - Virker kun når siden faktisk er deployet på Netlify (edge-funktionen
     kører ikke ved lokal `npx serve` eller ved at åbne filen direkte) —
     brug `netlify dev` hvis sync skal testes lokalt.
   - Tidligere brugte appen kvdb.io til dette; det er udskiftet, fordi
     kvdb.io's "opret kode"-endpoint stoppede med at virke pålideligt.
+  - **Sletning bruger "tombstones"** (`deleted:true` + nyt `updatedAt`) i
+    stedet for at fjerne posten helt — både for rum, optalte ting og
+    "kommende opgaver". Hvis man i stedet bare filtrerer posten væk fra
+    listen, kan den "genopstå": en anden enhed, der endnu ikke har hørt om
+    sletningen, lægger sin (ældre) lokale kopi sammen med serverens igen.
+  - **Skrive-funktioner henter altid friskeste data først** (rum og
+    optælling, funktionerne `freshRooms`/`freshCount`): før en tilføjelse/
+    justering/sletning gemmes, hentes den nyeste stand fra den delte kode og
+    lægges sammen med det lokale — så to enheder, der f.eks. begge trykker
+    "+1" på samme ting uden at have opdateret imellem, ikke overskriver
+    hinandens ændring (ellers baserer den sidste "+1" sig på et forældet
+    antal, og den anden enheds klik forsvinder stille).
 - **Optælling-fane** (tredje fane, erstattede den tidligere AI-chat-fane
-  "Struktur & optimering"): til at tælle op i depotrummet — navn, antal og
-  et valgfrit billede pr. ting. Billeder skaleres ned til maks. 640px/JPEG i
-  browseren (canvas), før de gemmes i `localStorage` og synkroniseres, så de
-  ikke fylder for meget. Der har tidligere også ligget en simplere
-  "Depotrum – inventar"-liste (vare/antal/lav-lager-advarsel) inde i
-  Opgaveoverblik-fanen — den er fjernet igen, da Optælling-fanen dækker
-  behovet.
+  "Struktur & optimering"): opdelt i **rum** (fx et fysisk depotrum) — man
+  opretter selv rum via "+ Nyt rum" (`window.__dlhAddRoom` m.fl.), skifter
+  mellem dem med piller øverst, og hvert rum har sin egen liste af ting
+  (navn, antal, valgfrit billede). Der er også et **søgefelt**, der søger på
+  tværs af alle rum (`window.__dlhSearchCount`) og viser hvilket rum en
+  match ligger i, med en "gå til rum"-knap. Billeder skaleres ned til maks.
+  640px/JPEG i browseren (canvas), før de gemmes i `localStorage` og
+  synkroniseres, så de ikke fylder for meget.
+  - Ting fra før "rum" fandtes (ingen `roomId`) flyttes automatisk ind i et
+    nyoprettet "Depotrum 1" første gang fanen åbnes efter opdateringen
+    (`window.__dlhMigrateOrphanCountItems`), så intet forsvinder.
+  - Der har tidligere også ligget en simplere "Depotrum – inventar"-liste
+    (vare/antal/lav-lager-advarsel) inde i Opgaveoverblik-fanen — den er
+    fjernet igen, da Optælling-fanen dækker behovet.
 - **Del/installér**: Web Share API + download-fallback, samt en indlejret
   web app manifest (data-URI) til "Installér som app".
 

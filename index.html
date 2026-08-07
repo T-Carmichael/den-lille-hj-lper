@@ -639,6 +639,95 @@
   }
   .cnt-delete:hover{color:#FF8F70;border-color:rgba(255,143,112,0.5);}
   .cnt-empty{color:var(--sub);font-size:12.5px;padding:4px 2px;}
+  .cnt-item-room{font-size:11px;color:var(--amber);margin-top:2px;}
+  .cnt-goto{
+    width:26px;height:26px;border-radius:8px;
+    border:1px solid var(--line);
+    background:var(--glass-strong);
+    color:var(--ink);
+    cursor:pointer;font-size:13px;
+  }
+
+  .cnt-search-bar{margin-bottom:12px;}
+  .cnt-search-bar input{
+    width:100%;
+    box-sizing:border-box;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:9px 12px;
+    font-size:13.5px;
+    color:var(--ink);
+    outline:none;
+  }
+  .cnt-search-bar input::placeholder{color:var(--sub);}
+  .cnt-search-results{margin-bottom:14px;display:flex;flex-direction:column;gap:8px;}
+
+  .cnt-rooms-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;margin-bottom:14px;}
+  .cnt-rooms{display:flex;flex-wrap:wrap;gap:6px;}
+  .cnt-room-pill{
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:999px;
+    padding:7px 14px;
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--sub);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .cnt-room-pill.active{
+    background:linear-gradient(135deg, var(--amber), var(--amber-deep));
+    border-color:transparent;
+    color:#241703;
+  }
+  .cnt-room-add{
+    background:none;
+    border:1px dashed var(--line);
+    border-radius:999px;
+    padding:7px 14px;
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--sub);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .cnt-room-new{display:flex;gap:6px;flex-wrap:wrap;width:100%;}
+  .cnt-room-new input{
+    flex:1 1 150px;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:8px 11px;
+    color:var(--ink);
+    font-size:13px;
+  }
+  .cnt-room-new input::placeholder{color:var(--sub);}
+  .cnt-room-new button{
+    border-radius:10px;
+    padding:8px 14px;
+    font-size:12.5px;
+    font-weight:700;
+    cursor:pointer;
+    white-space:nowrap;
+    border:1px solid rgba(255,200,87,0.5);
+    background:var(--amber-soft);
+    color:var(--ink);
+  }
+  #cnt-room-new-cancel{background:none;border-color:var(--line);color:var(--sub);}
+
+  .cnt-room-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+  .cnt-room-name{font-family:"Sora",sans-serif;font-weight:700;font-size:14.5px;}
+  .cnt-room-count{font-size:11px;color:var(--sub);margin-left:auto;}
+  .cnt-room-edit{
+    background:none;
+    border:1px solid var(--line);
+    border-radius:8px;
+    width:26px;height:26px;
+    font-size:12px;
+    cursor:pointer;
+    color:var(--sub);
+  }
 </style>
 </head>
 <body>
@@ -1204,21 +1293,26 @@
       return merged;
     };
 
-    // ---------- depotrum / optælling (til Optælling-fanen) ----------
-    // Løbende optælling af et par faste ting i depotrummet, med et billede
-    // som bevis for hvad der er talt.
+    // ---------- depotrum: rum + optælling (til Optælling-fanen) ----------
+    // "Rum" er en navngivet gruppe (fx et fysisk depotrum), og hvert rum har
+    // sin egen liste af optalte ting (navn, antal, evt. billede).
+    //
+    // To ting er lavet med vilje for at gøre samtidig brug fra flere enheder
+    // sikker:
+    // 1. Sletning markeres med deleted:true i stedet for at blive fjernet fra
+    //    listen (samme princip som "kommende opgaver" ovenfor) - ellers kan
+    //    en slettet ting/rum "genopstå", hvis en anden enhed lægger sin
+    //    (endnu ikke opdaterede) lokale kopi sammen med serverens bagefter.
+    // 2. Enhver ændring henter først den nyeste stand fra den delte kode
+    //    (freshRooms/freshCount) og lægger den sammen med det lokale, FØR
+    //    ændringen laves ovenpå. Ellers kan to enheder, der begge trykker
+    //    "+1" på samme ting uden at have opdateret imellem, ende med at den
+    //    ene tryk "forsvinder" (den sidste, der gemmer, vinder og kender
+    //    ikke til den andens ændring).
+    var LS_ROOMS_KEY = "dlh-depot-rooms";
     var LS_COUNT_KEY = "dlh-depot-count";
 
-    function loadCountLocal() {
-      try { return JSON.parse(localStorage.getItem(LS_COUNT_KEY) || "[]"); }
-      catch (e) { return []; }
-    }
-
-    function saveCountLocal(list) {
-      localStorage.setItem(LS_COUNT_KEY, JSON.stringify(list));
-    }
-
-    function mergeCount(a, b) {
+    function mergeById(a, b) {
       var map = {};
       (a || []).forEach(function (t) { map[t.id] = t; });
       (b || []).forEach(function (t) {
@@ -1228,13 +1322,51 @@
       return Object.keys(map).map(function (k) { return map[k]; });
     }
 
+    function loadRoomsLocal() {
+      try { return JSON.parse(localStorage.getItem(LS_ROOMS_KEY) || "[]"); }
+      catch (e) { return []; }
+    }
+    function saveRoomsLocal(list) {
+      localStorage.setItem(LS_ROOMS_KEY, JSON.stringify(list));
+    }
+    async function pushRooms(list) {
+      if (!syncCode) return;
+      try {
+        await fetch(SYNC_API + "/" + syncCode + "/rum", { method: "PUT", body: JSON.stringify(list) });
+      } catch (e) {}
+    }
+    async function pullRoomsRemote() {
+      if (!syncCode) return null;
+      try {
+        var res = await fetch(SYNC_API + "/" + syncCode + "/rum");
+        if (res.status === 404) return [];
+        if (!res.ok) return null;
+        return await res.json();
+      } catch (e) { return null; }
+    }
+    async function freshRooms() {
+      var local = loadRoomsLocal();
+      if (!syncCode) return local;
+      var remote = await pullRoomsRemote();
+      if (remote === null) return local;
+      var merged = mergeById(local, remote);
+      saveRoomsLocal(merged);
+      return merged;
+    }
+
+    function loadCountLocal() {
+      try { return JSON.parse(localStorage.getItem(LS_COUNT_KEY) || "[]"); }
+      catch (e) { return []; }
+    }
+    function saveCountLocal(list) {
+      localStorage.setItem(LS_COUNT_KEY, JSON.stringify(list));
+    }
     async function pushCount(list) {
       if (!syncCode) return;
       try {
         await fetch(SYNC_API + "/" + syncCode + "/optaelling", { method: "PUT", body: JSON.stringify(list) });
       } catch (e) {}
     }
-
     async function pullCountRemote() {
       if (!syncCode) return null;
       try {
@@ -1244,78 +1376,181 @@
         return await res.json();
       } catch (e) { return null; }
     }
+    async function freshCount() {
+      var local = loadCountLocal();
+      if (!syncCode) return local;
+      var remote = await pullCountRemote();
+      if (remote === null) return local;
+      var merged = mergeById(local, remote);
+      saveCountLocal(merged);
+      return merged;
+    }
 
-    window.__dlhGetCount = function () {
-      return loadCountLocal().sort(function (x, y) { return (x.createdAt || "").localeCompare(y.createdAt || ""); });
+    window.__dlhGetRooms = function () {
+      return loadRoomsLocal()
+        .filter(function (r) { return !r.deleted; })
+        .sort(function (x, y) { return (x.createdAt || "").localeCompare(y.createdAt || ""); });
     };
 
-    window.__dlhAddCountItem = async function (item) {
+    window.__dlhAddRoom = async function (name) {
+      var now = new Date().toISOString();
+      var entry = {
+        id: "r" + Date.now() + Math.random().toString(36).slice(2, 8),
+        name: name, createdAt: now, updatedAt: now, deleted: false
+      };
+      var list = (await freshRooms()).concat([entry]);
+      saveRoomsLocal(list);
+      await pushRooms(list);
+      return entry;
+    };
+
+    window.__dlhRenameRoom = async function (id, name) {
+      var list = (await freshRooms()).map(function (r) {
+        if (r.id !== id) return r;
+        return { id: r.id, name: name, createdAt: r.createdAt, deleted: r.deleted, updatedAt: new Date().toISOString() };
+      });
+      saveRoomsLocal(list);
+      await pushRooms(list);
+    };
+
+    // Sletter rummet og alle (ikke allerede slettede) ting i det.
+    window.__dlhDeleteRoom = async function (id) {
+      var now = new Date().toISOString();
+      var rooms = (await freshRooms()).map(function (r) {
+        if (r.id !== id) return r;
+        return { id: r.id, name: r.name, createdAt: r.createdAt, deleted: true, updatedAt: now };
+      });
+      saveRoomsLocal(rooms);
+      await pushRooms(rooms);
+
+      var items = (await freshCount()).map(function (t) {
+        if (t.roomId !== id || t.deleted) return t;
+        return {
+          id: t.id, roomId: t.roomId, name: t.name, qty: t.qty, image: t.image,
+          createdAt: t.createdAt, deleted: true, updatedAt: now
+        };
+      });
+      saveCountLocal(items);
+      await pushCount(items);
+    };
+
+    window.__dlhRefreshRooms = async function () {
+      var merged = await freshRooms();
+      await pushRooms(merged);
+      return merged;
+    };
+
+    // roomId er valgfri: uden den returneres ting fra alle rum.
+    window.__dlhGetCount = function (roomId) {
+      return loadCountLocal()
+        .filter(function (t) { return !t.deleted && (!roomId || t.roomId === roomId); })
+        .sort(function (x, y) { return (x.createdAt || "").localeCompare(y.createdAt || ""); });
+    };
+
+    // Søgning på tværs af alle rum (bruges af søgefeltet i Optælling-fanen).
+    window.__dlhSearchCount = function (term) {
+      var t = (term || "").toLowerCase().trim();
+      if (!t) return [];
+      return loadCountLocal()
+        .filter(function (it) { return !it.deleted && it.name.toLowerCase().indexOf(t) !== -1; })
+        .sort(function (x, y) { return (x.name || "").localeCompare(y.name || "", "da"); });
+    };
+
+    window.__dlhAddCountItem = async function (roomId, item) {
       var now = new Date().toISOString();
       var entry = {
         id: "c" + Date.now() + Math.random().toString(36).slice(2, 8),
+        roomId: roomId,
         name: item.name,
         qty: item.qty || 0,
         image: item.image || "",
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        deleted: false
       };
-      var list = loadCountLocal().concat([entry]);
+      var list = (await freshCount()).concat([entry]);
       saveCountLocal(list);
-      if (syncCode) await pushCount(list);
+      await pushCount(list);
       return entry;
     };
 
     // delta er +1 eller -1 (kan ikke gå under 0)
     window.__dlhAdjustCountQty = async function (id, delta) {
-      var list = loadCountLocal().map(function (t) {
+      var list = (await freshCount()).map(function (t) {
         if (t.id !== id) return t;
         return {
-          id: t.id, name: t.name, image: t.image, createdAt: t.createdAt,
+          id: t.id, roomId: t.roomId, name: t.name, image: t.image, createdAt: t.createdAt, deleted: t.deleted,
           qty: Math.max(0, (t.qty || 0) + delta),
           updatedAt: new Date().toISOString()
         };
       });
       saveCountLocal(list);
-      if (syncCode) await pushCount(list);
+      await pushCount(list);
     };
 
     window.__dlhSetCountImage = async function (id, image) {
-      var list = loadCountLocal().map(function (t) {
+      var list = (await freshCount()).map(function (t) {
         if (t.id !== id) return t;
         return {
-          id: t.id, name: t.name, qty: t.qty, createdAt: t.createdAt,
+          id: t.id, roomId: t.roomId, name: t.name, qty: t.qty, createdAt: t.createdAt, deleted: t.deleted,
           image: image, updatedAt: new Date().toISOString()
         };
       });
       saveCountLocal(list);
-      if (syncCode) await pushCount(list);
+      await pushCount(list);
     };
 
     window.__dlhDeleteCountItem = async function (id) {
-      var list = loadCountLocal().filter(function (t) { return t.id !== id; });
+      var now = new Date().toISOString();
+      var list = (await freshCount()).map(function (t) {
+        if (t.id !== id) return t;
+        return {
+          id: t.id, roomId: t.roomId, name: t.name, qty: t.qty, image: t.image,
+          createdAt: t.createdAt, deleted: true, updatedAt: now
+        };
+      });
       saveCountLocal(list);
-      if (syncCode) await pushCount(list);
+      await pushCount(list);
     };
 
     window.__dlhRefreshCount = async function () {
-      var local = loadCountLocal();
-      if (!syncCode) return local;
-      var remote = await pullCountRemote();
-      if (remote === null) return local;
-      var merged = mergeCount(local, remote);
-      saveCountLocal(merged);
+      var merged = await freshCount();
       await pushCount(merged);
       return merged;
+    };
+
+    // Flytter ting, der blev oprettet før "rum" fandtes (ingen roomId), ind i
+    // et nyt standard-rum, så ældre optællinger ikke bare forsvinder.
+    window.__dlhMigrateOrphanCountItems = async function () {
+      var items = loadCountLocal();
+      var orphans = items.filter(function (t) { return !t.deleted && !t.roomId; });
+      if (orphans.length === 0) return;
+      var rooms = await freshRooms();
+      var targetRoom = rooms.filter(function (r) { return !r.deleted; })[0];
+      if (!targetRoom) targetRoom = await window.__dlhAddRoom("Depotrum 1");
+      var now = new Date().toISOString();
+      var updated = items.map(function (t) {
+        if (t.deleted || t.roomId) return t;
+        return {
+          id: t.id, roomId: targetRoom.id, name: t.name, qty: t.qty, image: t.image,
+          createdAt: t.createdAt, deleted: false, updatedAt: now
+        };
+      });
+      saveCountLocal(updated);
+      await pushCount(updated);
     };
 
     renderConnectionUI();
   })();
 
-  // ---------- Optælling-panel (depotrum) ----------
+  // ---------- Optælling-panel (depotrum, opdelt i rum) ----------
   (function(){
     var panel = document.getElementById("panel-counting");
     var built = false;
     var pendingImage = "";
+    var LS_SELECTED_ROOM_KEY = "dlh-depot-selected-room";
+    var selectedRoomId = null;
+    try { selectedRoomId = localStorage.getItem(LS_SELECTED_ROOM_KEY) || null; } catch(e){}
 
     function esc(s){
       var d = document.createElement("div");
@@ -1330,6 +1565,12 @@
         return "talt op " + d.toLocaleDateString("da-DK", { day: "numeric", month: "short" }) +
           " kl. " + d.toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
       } catch(e){ return ""; }
+    }
+
+    function roomNameById(id){
+      var rooms = window.__dlhGetRooms ? window.__dlhGetRooms() : [];
+      var r = rooms.filter(function(x){ return x.id === id; })[0];
+      return r ? r.name : "Ukendt rum";
     }
 
     // Skalerer billedet ned, før det gemmes, så det ikke fylder for meget i
@@ -1375,54 +1616,139 @@
       }
     }
 
-    function renderCount(){
-      var listEl = document.getElementById("cnt-list");
-      if(!listEl) return;
-      var items = window.__dlhGetCount ? window.__dlhGetCount() : [];
-      document.getElementById("cnt-count").textContent =
-        items.length ? (items.length + (items.length === 1 ? " ting" : " ting")) : "";
-
-      if(items.length === 0){
-        listEl.innerHTML = '<div class="cnt-empty">Ingen ting talt op endnu. Tilføj dem herover.</div>';
-        return;
-      }
-      var html = "";
-      items.forEach(function(item){
-        html += '<div class="cnt-item">' +
-          (item.image
-            ? '<img class="cnt-item-img" src="' + esc(item.image) + '" alt="">'
-            : '<div class="cnt-item-img cnt-item-noimg">📦</div>') +
-          '<div class="cnt-item-body">' +
-            '<div class="cnt-item-name">' + esc(item.name) + '</div>' +
-            '<div class="cnt-item-updated">' + esc(formatCountDate(item.updatedAt)) + '</div>' +
-          '</div>' +
-          '<div class="cnt-item-actions">' +
-            '<button class="cnt-step" type="button" data-cnt-adjust="-1" data-id="' + esc(item.id) + '">−</button>' +
-            '<span class="cnt-qty">' + item.qty + '</span>' +
-            '<button class="cnt-step" type="button" data-cnt-adjust="1" data-id="' + esc(item.id) + '">+</button>' +
-            '<label class="cnt-rephoto" title="Skift billede">🖼' +
-              '<input type="file" accept="image/*" capture="environment" data-cnt-rephoto data-id="' + esc(item.id) + '" hidden>' +
-            '</label>' +
-            '<button class="cnt-delete" type="button" data-cnt-delete data-id="' + esc(item.id) + '" title="Slet">✕</button>' +
-          '</div>' +
-        '</div>';
-      });
-      listEl.innerHTML = html;
+    // showRoom=true bruges i søgeresultater (viser hvilket rum tingen er i,
+    // og en "gå til rum"-knap i stedet for tidspunktet for sidste optælling).
+    function itemCardHtml(item, showRoom){
+      return '<div class="cnt-item">' +
+        (item.image
+          ? '<img class="cnt-item-img" src="' + esc(item.image) + '" alt="">'
+          : '<div class="cnt-item-img cnt-item-noimg">📦</div>') +
+        '<div class="cnt-item-body">' +
+          '<div class="cnt-item-name">' + esc(item.name) + '</div>' +
+          (showRoom
+            ? '<div class="cnt-item-room">📍 ' + esc(roomNameById(item.roomId)) + '</div>'
+            : '<div class="cnt-item-updated">' + esc(formatCountDate(item.updatedAt)) + '</div>') +
+        '</div>' +
+        '<div class="cnt-item-actions">' +
+          '<button class="cnt-step" type="button" data-cnt-adjust="-1" data-id="' + esc(item.id) + '">−</button>' +
+          '<span class="cnt-qty">' + item.qty + '</span>' +
+          '<button class="cnt-step" type="button" data-cnt-adjust="1" data-id="' + esc(item.id) + '">+</button>' +
+          '<label class="cnt-rephoto" title="Skift billede">🖼' +
+            '<input type="file" accept="image/*" capture="environment" data-cnt-rephoto data-id="' + esc(item.id) + '" hidden>' +
+          '</label>' +
+          (showRoom
+            ? '<button class="cnt-goto" type="button" data-goto-room="' + esc(item.roomId) + '" title="Gå til rum">↪</button>'
+            : '') +
+          '<button class="cnt-delete" type="button" data-cnt-delete data-id="' + esc(item.id) + '" title="Slet">✕</button>' +
+        '</div>' +
+      '</div>';
     }
 
-    async function addCountFromForm(){
-      var nameEl = document.getElementById("cnt-name");
-      var qtyEl = document.getElementById("cnt-qty");
-      var name = nameEl.value.trim();
-      if(!name){ nameEl.focus(); return; }
-      var qty = parseInt(qtyEl.value, 10);
-      await window.__dlhAddCountItem({ name: name, qty: isNaN(qty) ? 0 : qty, image: pendingImage });
-      nameEl.value = "";
-      qtyEl.value = "";
-      document.getElementById("cnt-photo-input").value = "";
-      setPreview("");
-      nameEl.focus();
-      renderCount();
+    function renderSummary(rooms){
+      var el = document.getElementById("cnt-summary");
+      if(!el) return;
+      var totalItems = window.__dlhGetCount ? window.__dlhGetCount().length : 0;
+      el.textContent = rooms.length
+        ? (rooms.length + (rooms.length === 1 ? " rum" : " rum") + " · " + totalItems + (totalItems === 1 ? " ting" : " ting"))
+        : "";
+    }
+
+    function renderRoomsPills(){
+      var pillsEl = document.getElementById("cnt-rooms");
+      if(!pillsEl) return;
+      var rooms = window.__dlhGetRooms ? window.__dlhGetRooms() : [];
+      var html = rooms.map(function(r){
+        return '<button class="cnt-room-pill' + (r.id === selectedRoomId ? ' active' : '') + '" type="button" data-room-id="' + esc(r.id) + '">' + esc(r.name) + '</button>';
+      }).join("");
+      html += '<button class="cnt-room-add" id="cnt-room-add-btn" type="button">+ Nyt rum</button>';
+      pillsEl.innerHTML = html;
+    }
+
+    function renderRoomBody(){
+      var bodyEl = document.getElementById("cnt-room-body");
+      if(!bodyEl) return;
+      var rooms = window.__dlhGetRooms ? window.__dlhGetRooms() : [];
+      if(rooms.length === 0){
+        bodyEl.innerHTML = '<div class="cnt-empty">Ingen rum endnu. Opret jeres første rum med "+ Nyt rum" ovenfor.</div>';
+        return;
+      }
+      var room = rooms.filter(function(r){ return r.id === selectedRoomId; })[0] || rooms[0];
+      selectedRoomId = room.id;
+      try { localStorage.setItem(LS_SELECTED_ROOM_KEY, selectedRoomId); } catch(e){}
+      var items = window.__dlhGetCount ? window.__dlhGetCount(room.id) : [];
+
+      bodyEl.innerHTML =
+        '<div class="cnt-room-head">' +
+          '<span class="cnt-room-name">' + esc(room.name) + '</span>' +
+          '<span class="cnt-room-count">' + (items.length ? (items.length + (items.length === 1 ? " ting" : " ting")) : "") + '</span>' +
+          '<button class="cnt-room-edit" id="cnt-room-rename" type="button" title="Omdøb rum">✏️</button>' +
+          '<button class="cnt-room-edit" id="cnt-room-delete" type="button" title="Slet rum">🗑</button>' +
+        '</div>' +
+        '<div class="cnt-form">' +
+          '<input type="text" id="cnt-name" placeholder="Navn på tingen">' +
+          '<input type="number" id="cnt-qty" placeholder="Antal" min="0">' +
+          '<label class="cnt-photo-btn">📷 <span id="cnt-photo-label">Vælg billede</span>' +
+            '<input type="file" id="cnt-photo-input" accept="image/*" capture="environment" hidden>' +
+          '</label>' +
+          '<button id="cnt-add-btn" type="button">+ Tilføj</button>' +
+        '</div>' +
+        '<div class="cnt-preview" id="cnt-preview" style="display:none;">' +
+          '<img id="cnt-preview-img" alt="">' +
+          '<button type="button" id="cnt-preview-clear">✕</button>' +
+        '</div>' +
+        '<div class="cnt-list" id="cnt-list">' +
+          (items.length
+            ? items.map(function(it){ return itemCardHtml(it, false); }).join("")
+            : '<div class="cnt-empty">Ingen ting talt op i dette rum endnu.</div>') +
+        '</div>';
+      pendingImage = "";
+    }
+
+    function renderAll(){
+      var rooms = window.__dlhGetRooms ? window.__dlhGetRooms() : [];
+      if(!selectedRoomId || !rooms.some(function(r){ return r.id === selectedRoomId; })){
+        selectedRoomId = rooms.length ? rooms[0].id : null;
+        try { localStorage.setItem(LS_SELECTED_ROOM_KEY, selectedRoomId || ""); } catch(e){}
+      }
+      renderSummary(rooms);
+      renderRoomsPills();
+      renderRoomBody();
+    }
+
+    function selectRoom(id){
+      selectedRoomId = id;
+      try { localStorage.setItem(LS_SELECTED_ROOM_KEY, id || ""); } catch(e){}
+      renderRoomsPills();
+      renderRoomBody();
+    }
+
+    function updateSearchVisibility(term){
+      var hasTerm = !!(term || "").trim();
+      var roomArea = document.getElementById("cnt-room-area");
+      var resultsEl = document.getElementById("cnt-search-results");
+      if(!roomArea || !resultsEl) return;
+      roomArea.style.display = hasTerm ? "none" : "";
+      resultsEl.style.display = hasTerm ? "block" : "none";
+      if(hasTerm){
+        var matches = window.__dlhSearchCount ? window.__dlhSearchCount(term) : [];
+        resultsEl.innerHTML = matches.length
+          ? matches.map(function(it){ return itemCardHtml(it, true); }).join("")
+          : '<div class="cnt-empty">Ingen ting matcher "' + esc(term) + '".</div>';
+      } else {
+        resultsEl.innerHTML = "";
+      }
+    }
+
+    // Genoptegner det, der lige nu er synligt (søgeresultater eller det
+    // valgte rums liste) efter en tilføjelse/ændring/sletning.
+    function rerender(){
+      var searchEl = document.getElementById("cnt-search");
+      if(searchEl && searchEl.value.trim()){
+        updateSearchVisibility(searchEl.value);
+      } else {
+        renderRoomBody();
+      }
+      renderSummary(window.__dlhGetRooms ? window.__dlhGetRooms() : []);
     }
 
     function skeleton(){
@@ -1430,63 +1756,157 @@
         '<div class="cnt-wrap">' +
           '<div class="cnt-head">' +
             '<span class="cnt-title">📦 Optælling i depotrum</span>' +
-            '<span class="cnt-count" id="cnt-count"></span>' +
+            '<span class="cnt-count" id="cnt-summary"></span>' +
           '</div>' +
-          '<p class="cnt-hint">Tilføj de ting, I tæller op i depotrummet — navn, antal og gerne et billede.</p>' +
-          '<div class="cnt-form">' +
-            '<input type="text" id="cnt-name" placeholder="Navn på tingen">' +
-            '<input type="number" id="cnt-qty" placeholder="Antal" min="0">' +
-            '<label class="cnt-photo-btn">📷 <span id="cnt-photo-label">Vælg billede</span>' +
-              '<input type="file" id="cnt-photo-input" accept="image/*" capture="environment" hidden>' +
-            '</label>' +
-            '<button id="cnt-add-btn" type="button">+ Tilføj</button>' +
+          '<p class="cnt-hint">Opret et rum for hvert fysiske depotrum, og tæl de ting op, der er i det — navn, antal og gerne et billede.</p>' +
+          '<div class="cnt-search-bar">' +
+            '<input type="text" id="cnt-search" placeholder="🔍 Søg efter en ting i alle rum...">' +
           '</div>' +
-          '<div class="cnt-preview" id="cnt-preview" style="display:none;">' +
-            '<img id="cnt-preview-img" alt="">' +
-            '<button type="button" id="cnt-preview-clear">✕</button>' +
+          '<div class="cnt-search-results" id="cnt-search-results" style="display:none;"></div>' +
+          '<div id="cnt-room-area">' +
+            '<div class="cnt-rooms-bar">' +
+              '<div class="cnt-rooms" id="cnt-rooms"></div>' +
+              '<div class="cnt-room-new" id="cnt-room-new" style="display:none;">' +
+                '<input type="text" id="cnt-room-new-input" placeholder="Navn på rum">' +
+                '<button id="cnt-room-new-save" type="button">Opret</button>' +
+                '<button id="cnt-room-new-cancel" type="button">Annuller</button>' +
+              '</div>' +
+            '</div>' +
+            '<div id="cnt-room-body"></div>' +
           '</div>' +
-          '<div class="cnt-list" id="cnt-list"></div>' +
         '</div>';
 
-      document.getElementById("cnt-photo-input").addEventListener("change", async function(e){
-        var file = e.target.files && e.target.files[0];
-        if(!file) return;
-        try { setPreview(await readAndResizeImage(file)); }
-        catch(err){ setPreview(""); }
-      });
-      document.getElementById("cnt-preview-clear").addEventListener("click", function(){
-        document.getElementById("cnt-photo-input").value = "";
-        setPreview("");
-      });
-      document.getElementById("cnt-add-btn").addEventListener("click", addCountFromForm);
-      document.getElementById("cnt-name").addEventListener("keydown", function(e){
-        if(e.key === "Enter") addCountFromForm();
+      panel.addEventListener("input", function(e){
+        if(e.target.id === "cnt-search") updateSearchVisibility(e.target.value);
       });
 
-      document.getElementById("cnt-list").addEventListener("click", async function(e){
+      panel.addEventListener("keydown", function(e){
+        if(e.target.id === "cnt-room-new-input" && e.key === "Enter"){
+          e.preventDefault();
+          var saveBtn = document.getElementById("cnt-room-new-save");
+          if(saveBtn) saveBtn.click();
+        }
+        if(e.target.id === "cnt-name" && e.key === "Enter"){
+          e.preventDefault();
+          var addBtn = document.getElementById("cnt-add-btn");
+          if(addBtn) addBtn.click();
+        }
+      });
+
+      panel.addEventListener("change", async function(e){
+        if(e.target.id === "cnt-photo-input"){
+          var file = e.target.files && e.target.files[0];
+          if(!file) return;
+          try { setPreview(await readAndResizeImage(file)); }
+          catch(err){ setPreview(""); }
+          return;
+        }
+        var rephotoInput = e.target.closest("[data-cnt-rephoto]");
+        if(rephotoInput){
+          var file2 = rephotoInput.files && rephotoInput.files[0];
+          if(!file2) return;
+          try {
+            var dataUrl = await readAndResizeImage(file2);
+            await window.__dlhSetCountImage(rephotoInput.dataset.id, dataUrl);
+            rerender();
+          } catch(err){}
+        }
+      });
+
+      panel.addEventListener("click", async function(e){
+        if(e.target.closest("#cnt-room-add-btn")){
+          var f = document.getElementById("cnt-room-new");
+          f.style.display = "flex";
+          document.getElementById("cnt-room-new-input").focus();
+          return;
+        }
+        if(e.target.closest("#cnt-room-new-cancel")){
+          document.getElementById("cnt-room-new").style.display = "none";
+          document.getElementById("cnt-room-new-input").value = "";
+          return;
+        }
+        if(e.target.closest("#cnt-room-new-save")){
+          var input = document.getElementById("cnt-room-new-input");
+          var name = input.value.trim();
+          if(!name){ input.focus(); return; }
+          var room = await window.__dlhAddRoom(name);
+          input.value = "";
+          document.getElementById("cnt-room-new").style.display = "none";
+          selectRoom(room.id);
+          return;
+        }
+
+        var renameBtn = e.target.closest("#cnt-room-rename");
+        if(renameBtn){
+          var rooms = window.__dlhGetRooms ? window.__dlhGetRooms() : [];
+          var room2 = rooms.filter(function(r){ return r.id === selectedRoomId; })[0];
+          if(!room2) return;
+          var newName = prompt("Nyt navn til rummet:", room2.name);
+          if(newName === null) return;
+          newName = newName.trim();
+          if(!newName) return;
+          await window.__dlhRenameRoom(room2.id, newName);
+          renderAll();
+          return;
+        }
+        var deleteRoomBtn = e.target.closest("#cnt-room-delete");
+        if(deleteRoomBtn){
+          var rooms2 = window.__dlhGetRooms ? window.__dlhGetRooms() : [];
+          var room3 = rooms2.filter(function(r){ return r.id === selectedRoomId; })[0];
+          if(!room3) return;
+          var itemsInRoom = window.__dlhGetCount ? window.__dlhGetCount(room3.id) : [];
+          var msg = 'Slet rummet "' + room3.name + '"' +
+            (itemsInRoom.length ? " og de " + itemsInRoom.length + " ting, der er talt op i det" : "") + "?";
+          if(!confirm(msg)) return;
+          await window.__dlhDeleteRoom(room3.id);
+          selectedRoomId = null;
+          renderAll();
+          return;
+        }
+
+        var gotoBtn = e.target.closest("[data-goto-room]");
+        if(gotoBtn){
+          var searchEl = document.getElementById("cnt-search");
+          if(searchEl) searchEl.value = "";
+          updateSearchVisibility("");
+          selectRoom(gotoBtn.dataset.gotoRoom);
+          return;
+        }
+        var pill = e.target.closest("[data-room-id]");
+        if(pill){ selectRoom(pill.dataset.roomId); return; }
+
+        if(e.target.closest("#cnt-add-btn")){
+          var nameEl = document.getElementById("cnt-name");
+          var qtyEl = document.getElementById("cnt-qty");
+          var name2 = nameEl.value.trim();
+          if(!name2){ nameEl.focus(); return; }
+          var qty = parseInt(qtyEl.value, 10);
+          await window.__dlhAddCountItem(selectedRoomId, { name: name2, qty: isNaN(qty) ? 0 : qty, image: pendingImage });
+          pendingImage = "";
+          rerender();
+          var freshNameEl = document.getElementById("cnt-name");
+          if(freshNameEl) freshNameEl.focus();
+          return;
+        }
+        if(e.target.closest("#cnt-preview-clear")){
+          var pi = document.getElementById("cnt-photo-input");
+          if(pi) pi.value = "";
+          setPreview("");
+          return;
+        }
+
         var delBtn = e.target.closest("[data-cnt-delete]");
         if(delBtn){
           if(!confirm("Slet denne optælling?")) return;
           await window.__dlhDeleteCountItem(delBtn.dataset.id);
-          renderCount();
+          rerender();
           return;
         }
         var stepBtn = e.target.closest("[data-cnt-adjust]");
         if(stepBtn){
           await window.__dlhAdjustCountQty(stepBtn.dataset.id, parseInt(stepBtn.dataset.cntAdjust, 10));
-          renderCount();
+          rerender();
         }
-      });
-      document.getElementById("cnt-list").addEventListener("change", async function(e){
-        var input = e.target.closest("[data-cnt-rephoto]");
-        if(!input) return;
-        var file = input.files && input.files[0];
-        if(!file) return;
-        try {
-          var dataUrl = await readAndResizeImage(file);
-          await window.__dlhSetCountImage(input.dataset.id, dataUrl);
-          renderCount();
-        } catch(err){}
       });
     }
 
@@ -1495,9 +1915,11 @@
         skeleton();
         built = true;
       }
-      renderCount();
-      var fresh = await window.__dlhRefreshCount();
-      if(fresh) renderCount();
+      renderAll();
+      if(window.__dlhMigrateOrphanCountItems) await window.__dlhMigrateOrphanCountItems();
+      await window.__dlhRefreshRooms();
+      await window.__dlhRefreshCount();
+      renderAll();
     };
   })();
 
