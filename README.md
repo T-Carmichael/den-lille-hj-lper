@@ -1,8 +1,8 @@
 # Den lille hjælper
 
-En samlet app til Norddjurs Kommune-arbejde: opgave- og tidsrapport med
-enheds-synkronisering, opgaveoverblik over tid, og optælling i depotrum
-(navn, antal og billede pr. ting).
+En samlet app til Norddjurs Kommune-arbejde: opgaverapport (pr. lokation)
+med enheds-synkronisering, opgaveoverblik over tid, og optælling i
+depotrum (navn, antal og billede pr. ting).
 
 Hele appen er én selvstændig HTML-fil (`index.html`) – ingen build-trin,
 ingen dependencies. Det eneste, der kræves for at køre den, er en browser.
@@ -30,5 +30,5 @@ Træk mappen ind på [app.netlify.com/drop](https://app.netlify.com/drop)
 
 ## Struktur
 
-- `index.html` – hele appen (UI, AI-chat-integration, rapport-værktøj, sync-logik)
+- `index.html` – hele appen (UI, rapport-værktøj, sync-logik)
 - `netlify.toml` – Netlify deploy-konfiguration
