@@ -795,8 +795,6 @@
       <div class="tabs" id="tabs">
         <button class="tab-btn active" data-panel="rapport">📋 Rapport</button>
         <button class="tab-btn" data-panel="overview">🗂️ Opgaveoverblik</button>
-        <button class="tab-btn" data-panel="office">📊 MS Office</button>
-        <button class="tab-btn" data-panel="code">💻 Programmering</button>
         <button class="tab-btn" data-panel="structure">🗂️ Struktur &amp; optimering</button>
       </div>
     </div>
@@ -833,8 +831,6 @@
 
     <div class="panel" id="panel-overview" data-mode="overview"></div>
 
-    <div class="panel" id="panel-office" data-mode="office"></div>
-    <div class="panel" id="panel-code" data-mode="code"></div>
     <div class="panel" id="panel-structure" data-mode="structure"></div>
   </div>
 
@@ -1424,21 +1420,13 @@
 
   // ---------- AI chat setup ----------
   var MODES = {
-    office: {
-      hint: "Spørg om Excel-formler, Word-opsætning, PowerPoint, Outlook m.m.",
-      system: "Du er en tålmodig ekspert i Microsoft Office (Excel, Word, PowerPoint, Outlook) og hjælper en nybegynder hos en kommune. Forklar i enkle, konkrete trin. Brug altid præcise knapnavne og menu-stier (fx 'Data > Datavalidering'). Giv Excel-formler i kodeblokke. Antag ingen forudgående viden, men vær ikke nedladende. Svar på dansk medmindre andet bedes om."
-    },
-    code: {
-      hint: "Spørg om fejlfinding, forklaringer eller kodeeksempler.",
-      system: "Du er en tålmodig programmeringsmentor for en total nybegynder, som ikke ved noget om at bygge rigtige apps endnu. Forklar koncepter med enkle hverdagsanalogier før du viser kode. Vis altid kode i kodeblokke med sprog angivet. Forklar HVORFOR noget virker, ikke kun hvordan. Undgå jargon uden at forklare det med det samme. Svar på dansk medmindre andet bedes om."
-    },
     structure: {
       hint: "Spørg om prioritering, arbejdsgange eller at få overblik over opgaver.",
       system: "Du hjælper brugeren med at strukturere og optimere opgaver, projekter og arbejdsgange - fx rapportering, to-do-lister, prioritering eller processer i en kommunal kontekst. Still ét afklarende spørgsmål hvis omfanget er uklart, ellers giv et konkret, brugbart forslag med struktur (punkter, faser eller trin). Vær praktisk, ikke teoretisk. Svar på dansk medmindre andet bedes om."
     }
   };
 
-  var threads = { office: [], code: [], structure: [] };
+  var threads = { structure: [] };
 
   function escapeHtml(s){
     var d = document.createElement("div");

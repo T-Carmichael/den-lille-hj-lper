@@ -35,9 +35,10 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     brug `netlify dev` hvis sync skal testes lokalt.
   - Tidligere brugte appen kvdb.io til dette; det er udskiftet, fordi
     kvdb.io's "opret kode"-endpoint stoppede med at virke pålideligt.
-- **AI-hjælpere**: tre chat-faner (MS Office, Programmering, Struktur &
-  optimering), der kalder Anthropic API'et direkte fra browseren
-  (`https://api.anthropic.com/v1/messages`, model `claude-sonnet-4-6`).
+- **AI-hjælper**: chat-fanen "Struktur & optimering", der kalder Anthropic
+  API'et direkte fra browseren (`https://api.anthropic.com/v1/messages`,
+  model `claude-sonnet-4-6`). Fanerne "MS Office" og "Programmering" er
+  fjernet igen efter ønske.
 - **Del/installér**: Web Share API + download-fallback, samt en indlejret
   web app manifest (data-URI) til "Installér som app".
 
