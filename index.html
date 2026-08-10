@@ -1054,10 +1054,22 @@
       } catch (e) {}
     }
 
+    // pullInFlight/pushInFlight forhindrer at et "hent nyeste" (poll hvert
+    // 20. sekund) og en afsendelse kan overlappe og løbe om kap - uden det
+    // kan et "hent nyeste", der lander lige efter man har taget et billede
+    // (men før billedet er nået at blive sendt op), overskrive hele
+    // formularen med den ældre, billed-løse udgave fra serveren. Kameraet
+    // kan sagtens tage over 20 sekunder (app-skift, tage billede, vende
+    // tilbage), så det er ikke et sjældent tilfælde.
+    var pullInFlight = false;
+    var pushInFlight = false;
+
     async function pushState() {
       if (!syncCode || !reportReady) return;
+      if (pullInFlight) { schedulePush(); return; }
       var state = getReportState();
       if (!state) return;
+      pushInFlight = true;
       try {
         await fetch(SYNC_API + "/" + syncCode + "/" + SYNC_KEY, {
           method: "PUT",
@@ -1066,12 +1078,18 @@
         setStatus("Forbundet · gemt " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }));
       } catch (e) {
         setStatus("Forbundet · kunne ikke gemme (tjek internet)");
+      } finally {
+        pushInFlight = false;
       }
     }
 
     async function pullState(showStatus) {
       if (!syncCode) return;
+      // undgå at overskrive lokale ændringer, der enten er sat til at blive
+      // sendt om lidt (pushTimer) eller er ved at blive sendt lige nu
+      if (pushTimer || pushInFlight) return;
       if (showStatus) setStatus("Henter nyeste...");
+      pullInFlight = true;
       try {
         var res = await fetch(SYNC_API + "/" + syncCode + "/" + SYNC_KEY);
         if (res.status === 404) {
@@ -1084,12 +1102,17 @@
         setStatus("Forbundet · opdateret " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }));
       } catch (e) {
         if (showStatus) setStatus("Forbundet · kunne ikke hente (tjek internet)");
+      } finally {
+        pullInFlight = false;
       }
     }
 
     function schedulePush() {
       if (pushTimer) clearTimeout(pushTimer);
-      pushTimer = setTimeout(pushState, 1500);
+      pushTimer = setTimeout(function () {
+        pushTimer = null;
+        pushState();
+      }, 1500);
     }
 
     function startPolling() {
