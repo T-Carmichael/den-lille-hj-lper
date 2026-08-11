@@ -71,6 +71,15 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     titel/beskrivelse/ansvarlig på samme dato (typisk rester fra før
     id-migreringen), beholder den bedste status, fjerner resten som
     tombstones.
+  - **Punkter der stadig "Afventer" på tværs af flere datoer vises kun
+    med den nyeste** (`buildCombinedDays` i Opgaveoverblik-IIFE'en,
+    matchet på punkt-id). Rapport-formularen rydder bevidst kun
+    "Udført"-punkter efter Gem (se `__clearCompletedItems` i
+    `REPORT_HTML`) - et punkt der stadig afventer bliver stående og
+    logges derfor på ny hver dag, det gemmes. Dette er rent et
+    visnings-/tællings-lag (ligesom "Ryd dubletter", bare på tværs af
+    datoer i stedet for inden for én dato) - rører ikke selve den
+    gemte historik, kræver derfor ikke adgangskoden.
   - **"📄 Generér rapport"**: se under Rapport-fanen ovenfor.
   - Sletning bruger "tombstones" (`{id, deleted:true}`) ligesom resten af
     appen - se afsnittet om enheds-sync nedenfor.

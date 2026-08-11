@@ -2582,7 +2582,37 @@
         });
       });
 
+      // Et punkt, der stadig "Afventer" (eller ikke har fået en status), bliver
+      // bevidst stående i selve rapport-formularen fra dag til dag, så det
+      // ikke glemmes - men det betyder, at det samme punkt (samme id, takket
+      // være ensureItemId/__dlhMigrateHistoryItemIds) kan optræde under FLERE
+      // datoer, hvis "Gem" trykkes igen på en ny dag, mens det stadig
+      // afventer. Her beholder vi kun den NYESTE dato pr. punkt-id blandt de
+      // punkter, der ikke er "Udført", så det ikke ser ud som en dubleret
+      // opgave i overblikket. Rent visnings-lag - rører ikke selve den gemte
+      // historik (samme princip som "Ryd dubletter", bare på tværs af datoer
+      // i stedet for inden for én dato, og uden at slette noget). Fuldførte
+      // ("OK") punkter er upåvirkede - de er reelle, enkeltstående hændelser.
+      function nonOkKey(it){
+        return it.id || ("legacy:" + (it.emne || "") + "|" + (it.krav || "") + "|" + (it.ansvarlig || ""));
+      }
+      var latestNonOkDate = {};
+      Object.keys(byDate).forEach(function(d){
+        byDate[d].items.forEach(function(it){
+          if(it.status === "OK") return;
+          var key = nonOkKey(it);
+          if(!latestNonOkDate[key] || d > latestNonOkDate[key]) latestNonOkDate[key] = d;
+        });
+      });
+      Object.keys(byDate).forEach(function(d){
+        byDate[d].items = byDate[d].items.filter(function(it){
+          if(it.status === "OK") return true;
+          return latestNonOkDate[nonOkKey(it)] === d;
+        });
+      });
+
       return Object.keys(byDate).map(function(k){ return byDate[k]; })
+        .filter(function(d){ return d.items.length > 0; })
         .sort(function(x, y){ return (y.date || "").localeCompare(x.date || ""); });
     }
 
