@@ -1262,9 +1262,18 @@
       try {
         reportFrame.contentDocument.addEventListener("input", schedulePush);
         reportFrame.contentDocument.addEventListener("click", function (e) {
-          if (e.target.closest(".toggle, .photo-btn, .delete-extra, #add-point-btn")) schedulePush();
-          // status skiftet eller et foto valgt - log det med det samme, i
-          // stedet for at vente på at brugeren forlader et tekstfelt.
+          // "Slet punkt"/"Tilføj punkt" ændrer kun selve rapporten (ikke
+          // Opgaveoverblik) - dem sender vi stadig via den almindelige,
+          // forsinkede rapport-synkronisering.
+          if (e.target.closest(".delete-extra, #add-point-btn")) schedulePush();
+          // Status skiftet eller et foto valgt - log det med det samme (i
+          // stedet for at vente på at brugeren forlader et tekstfelt).
+          // BEVIDST IKKE også schedulePush() her: window.autoLogToday()
+          // sender allerede selv den opdaterede (evt. ryddede) rapport
+          // videre til sidst - to samtidige, forskudte forsøg på at
+          // gemme rapporten var et kapløb, hvor den forsinkede (urensede)
+          // udgave nogle gange vandt og fik en lige-fuldført opgave til
+          // at "dukke op igen" ved næste genindlæsning.
           if (e.target.closest(".toggle, .photo-btn") && window.autoLogToday) window.autoLogToday();
         });
         // titel, beskrivelse, bemærkning eller ansvarlig forladt - log
