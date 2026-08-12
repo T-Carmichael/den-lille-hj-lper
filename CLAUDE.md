@@ -21,12 +21,35 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   `<iframe srcdoc="...">` inde i `index.html`. Selve rapport-HTML'en ligger
   som en escaped JS-streng midt i filen (søg efter `REPORT_HTML`).
   - **Ingen "Gem"-knap** — opgaver logges automatisk til Opgaveoverblik, når
-    man forlader et felt (titel/beskrivelse/bemærkning/ansvarlig) eller
-    klikker en status-knap eller foto-knap (`autoLogToday` i det ydre
-    script, kaldt fra `focusout`/`click`-lyttere sat op i
-    `reportFrame`'s `"load"`-event). Kalder bare den samme (allerede
-    fejlsikrede) `window.__dlhLogToday()`, som "Gem"-knappen tidligere
-    gjorde — inklusiv at rydde "Udført"-punkter fra formularen bagefter.
+    man forlader et felt (titel/beskrivelse/bemærkning/ansvarlig), klikker
+    en status-knap, eller et foto rent faktisk er færdigbehandlet/fjernet
+    (`autoLogToday` i det ydre script, kaldt fra `focusout`/`click`-lyttere
+    sat op i `reportFrame`'s `"load"`-event). Kalder bare den samme
+    (allerede fejlsikrede) `window.__dlhLogToday()`, som "Gem"-knappen
+    tidligere gjorde — inklusiv at rydde "Udført"-punkter fra formularen
+    bagefter.
+    - **Foto-knappen selv trigger IKKE auto-log ved klik** (det er bare
+      filvælgeren, der åbnes der — billedet er ikke klar endnu). I stedet
+      sender `REPORT_HTML`s `applyPhoto()`-funktion en `dlh-photo-saved`
+      custom event fra knappen, når `btn.dataset.photo` reelt er sat
+      (billedet er skaleret og klar), og det samme sker ved "✕ Skift/fjern
+      foto". Det ydre script lytter efter denne event og kalder
+      `autoLogToday()` derfra. `applyPhoto(btn, dataUrl, skipNotify)` har
+      et `skipNotify`-flag, som `deserializeState()` bruger, når den
+      genskaber gemte/synkroniserede billeder — ellers ville det at hente
+      data fra serveren i sig selv udløse en ny (unødvendig) gemning.
+      Rettet fordi status-klik/felt-forladt allerede dækkede tekst, men
+      billeder blev reelt ikke fanget af auto-gem, da klik-baseret
+      trigger skete for tidligt (før billedbehandlingen var færdig).
+  - **Status-klik sender kun ÉN rapport-gemning, ikke to konkurrerende**:
+    `.toggle`-klik trigger `autoLogToday()`, som selv sender den
+    (ryddede) rapport videre til sidst — det almindelige forsinkede
+    `schedulePush()` (der ellers kører på alle `input`-ændringer) er
+    bevidst IKKE også koblet på `.toggle`-klik. Var det, kunne den
+    forsinkede, urensede udgave nogle gange "vinde" kapløbet og få en
+    lige-fuldført opgave til at dukke op igen ved næste genindlæsning
+    (oplevet i praksis: "opgaven forsvinder, men er der igen når jeg
+    skifter side og går tilbage").
   - **Grunddata er Lokation (dropdown) + Dato**, ikke længere en
     "Medarbejder"-tekstboks — appen bruges af flere personer, så et
     medarbejdernavn gav ikke mening. Feltets interne id hedder stadig
