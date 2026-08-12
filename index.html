@@ -2712,6 +2712,20 @@
       var freshUpcoming = await window.__dlhRefreshUpcoming();
       if(freshUpcoming) renderUpcoming();
     };
+
+    // I modsætning til selve rapporten (som synkroniserer sig selv hvert 20.
+    // sekund via startPolling() i sync-IIFE'en) blev Opgaveoverblikket kun
+    // opdateret ved fane-skift eller tryk på "Opdater" - så to enheder, der
+    // begge stod åbne på fanen, kunne vise forskellige (forældede) tal på
+    // trods af at være forbundet. Poller nu i baggrunden med samme rytme.
+    setInterval(async function(){
+      if(!built) return;
+      if(window.__dlhMigrateHistoryItemIds) window.__dlhMigrateHistoryItemIds();
+      var freshHistory = await window.__dlhRefreshHistory();
+      if(freshHistory){ renderList(); renderGenRepLocations(); }
+      var freshUpcoming = await window.__dlhRefreshUpcoming();
+      if(freshUpcoming) renderUpcoming();
+    }, 20000);
   })();
 </script>
 </body>
