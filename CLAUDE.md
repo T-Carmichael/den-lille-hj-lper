@@ -20,6 +20,13 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
 - **Rapport-fane**: Norddjurs Kommunes opgaverapport, kørende i en
   `<iframe srcdoc="...">` inde i `index.html`. Selve rapport-HTML'en ligger
   som en escaped JS-streng midt i filen (søg efter `REPORT_HTML`).
+  - **Ingen "Gem"-knap** — opgaver logges automatisk til Opgaveoverblik, når
+    man forlader et felt (titel/beskrivelse/bemærkning/ansvarlig) eller
+    klikker en status-knap eller foto-knap (`autoLogToday` i det ydre
+    script, kaldt fra `focusout`/`click`-lyttere sat op i
+    `reportFrame`'s `"load"`-event). Kalder bare den samme (allerede
+    fejlsikrede) `window.__dlhLogToday()`, som "Gem"-knappen tidligere
+    gjorde — inklusiv at rydde "Udført"-punkter fra formularen bagefter.
   - **Grunddata er Lokation (dropdown) + Dato**, ikke længere en
     "Medarbejder"-tekstboks — appen bruges af flere personer, så et
     medarbejdernavn gav ikke mening. Feltets interne id hedder stadig
@@ -74,9 +81,10 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   - **Punkter der stadig "Afventer" på tværs af flere datoer vises kun
     med den nyeste** (`buildCombinedDays` i Opgaveoverblik-IIFE'en,
     matchet på punkt-id). Rapport-formularen rydder bevidst kun
-    "Udført"-punkter efter Gem (se `__clearCompletedItems` i
-    `REPORT_HTML`) - et punkt der stadig afventer bliver stående og
-    logges derfor på ny hver dag, det gemmes. Dette er rent et
+    "Udført"-punkter efter hver automatisk logning (se
+    `__clearCompletedItems` i `REPORT_HTML`) - et punkt der stadig
+    afventer bliver stående og logges derfor på ny, hver gang det
+    auto-gemmes (fx en dag efter). Dette er rent et
     visnings-/tællings-lag (ligesom "Ryd dubletter", bare på tværs af
     datoer i stedet for inden for én dato) - rører ikke selve den
     gemte historik, kræver derfor ikke adgangskoden.

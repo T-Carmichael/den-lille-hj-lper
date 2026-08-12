@@ -202,20 +202,6 @@
     color:var(--sub);
   }
   .util-status-btn.expanded .chevron{transform:rotate(90deg);}
-  .util-log-btn{
-    flex:0 0 auto;
-    background:linear-gradient(135deg, var(--amber), var(--amber-deep));
-    color:#241703;
-    border:none;
-    font-family:"Inter",sans-serif;
-    font-size:12px;
-    font-weight:700;
-    padding:8px 13px;
-    border-radius:12px;
-    cursor:pointer;
-    white-space:nowrap;
-  }
-
   .sync-bar{
     flex-shrink:0;
     background:var(--glass);
@@ -786,7 +772,6 @@
           <span id="sync-status-text">Ikke forbundet</span>
           <span class="chevron">›</span>
         </button>
-        <button class="util-log-btn" id="log-today-btn" type="button">💾 Gem</button>
       </div>
       <div class="sync-bar" id="sync-panel" style="display:none;">
         <div class="sync-row" id="sync-row-setup">
@@ -1278,6 +1263,17 @@
         reportFrame.contentDocument.addEventListener("input", schedulePush);
         reportFrame.contentDocument.addEventListener("click", function (e) {
           if (e.target.closest(".toggle, .photo-btn, .delete-extra, #add-point-btn")) schedulePush();
+          // status skiftet eller et foto valgt - log det med det samme, i
+          // stedet for at vente på at brugeren forlader et tekstfelt.
+          if (e.target.closest(".toggle, .photo-btn") && window.autoLogToday) window.autoLogToday();
+        });
+        // titel, beskrivelse, bemærkning eller ansvarlig forladt - log
+        // opgaven til Opgaveoverblik automatisk (ingen "Gem"-knap længere).
+        reportFrame.contentDocument.addEventListener("focusout", function (e) {
+          var el = e.target;
+          if (el.closest && el.closest(".item-emne, .item-krav, .detail textarea, .detail input[type=text]")) {
+            if (window.autoLogToday) window.autoLogToday();
+          }
         });
       } catch (e) {}
     });
@@ -2361,20 +2357,23 @@
   })();
 
   // ---------- "Gem" knap (gemmer dagens opgaver til Opgaveoverblik) ----------
-  document.getElementById("log-today-btn").addEventListener("click", async function(){
-    var btn = this;
-    btn.disabled = true;
-    var original = btn.textContent;
-    btn.textContent = "Gemmer...";
-    try{
-      var result = await window.__dlhLogToday();
-      btn.textContent = (result && result.ok) ? "✓ Gemt" : "⚠ Fejl";
-    } catch(e){
-      btn.textContent = "⚠ Fejl";
-    } finally {
-      setTimeout(function(){ btn.textContent = original; btn.disabled = false; }, 1800);
+  // ---------- automatisk gem af opgaver (ingen "Gem"-knap længere) ----------
+  // Opgaver logges automatisk til Opgaveoverblik, når man forlader et felt
+  // (titel, beskrivelse, bemærkning, ansvarlig) eller skifter status - man
+  // skal ikke længere huske selv at trykke en "Gem"-knap. __dlhLogToday er
+  // allerede fuldt fejlsikret (se sync-IIFE'en), så det er trygt at kalde
+  // den ofte - går noget galt, gemmes der bare lokalt, uden nogen fejl vist.
+  var autoLogInFlight = false;
+  var autoLogQueued = false;
+  async function autoLogToday(){
+    if (autoLogInFlight) { autoLogQueued = true; return; }
+    autoLogInFlight = true;
+    try { await window.__dlhLogToday(); }
+    finally {
+      autoLogInFlight = false;
+      if (autoLogQueued) { autoLogQueued = false; autoLogToday(); }
     }
-  });
+  }
 
   // ---------- fold synk-detaljer ud/ind ----------
   (function(){
