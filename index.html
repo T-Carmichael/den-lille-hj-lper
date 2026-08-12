@@ -1009,29 +1009,35 @@
     var reportReady = false;
     var pollTimer = null;
 
-    // Henter en nøgle og dens ETag (en slags "versionsmærke", som ændrer sig,
+    // Henter en nøgle og dens version (et "versionsmærke", som ændrer sig,
     // hver gang nøglen gemmes). Bruges sammen med putWithEtag herunder til at
     // sikre, at to enheder aldrig kan overskrive hinandens gemte data, bare
     // fordi de gemmer næsten samtidig - se netlify/edge-functions/sync.js.
+    // Bruger egne header-navne (X-Dlh-Version/X-Dlh-If-Version) i stedet for
+    // de "rigtige" ETag/If-Match - de sidste har strenge formaterings-regler
+    // og risikerer at blive omskrevet/fjernet undervejs af mellemliggende
+    // lag, der selv forsøger at fortolke dem. Egne header-navne er bare rå
+    // strenge, ingen indbygget fortolkning noget sted.
     async function fetchWithEtag(key) {
       try {
         var res = await fetch(SYNC_API + "/" + syncCode + "/" + key);
         if (res.status === 404) return { data: null, etag: "" };
         if (!res.ok) return null;
-        var etag = res.headers.get("ETag") || "";
+        var etag = res.headers.get("X-Dlh-Version") || "";
         var data = await res.json();
         return { data: data, etag: etag };
       } catch (e) { return null; }
     }
 
-    // Gemmer kun, hvis ETag'en stadig er aktuel (dvs. intet er ændret siden
-    // vi hentede den). Returnerer "ok", "conflict" (en anden enhed nåede at
-    // gemme noget imellem vores hentning og forsøg på at gemme) eller "error".
+    // Gemmer kun, hvis versionen stadig er aktuel (dvs. intet er ændret
+    // siden vi hentede den). Returnerer "ok", "conflict" (en anden enhed
+    // nåede at gemme noget imellem vores hentning og forsøg på at gemme)
+    // eller "error".
     async function putWithEtag(key, dataObj, etag) {
       try {
         var res = await fetch(SYNC_API + "/" + syncCode + "/" + key, {
           method: "PUT",
-          headers: { "If-Match": etag || "__new__" },
+          headers: { "X-Dlh-If-Version": etag || "__new__" },
           body: JSON.stringify(dataObj)
         });
         if (res.status === 409) return "conflict";

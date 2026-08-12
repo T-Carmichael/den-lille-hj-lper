@@ -5,9 +5,9 @@
 //
 // URL-mønster: /api/sync/<forbindelseskode>/<nøgle>
 //   GET -> henter den gemte værdi (404 hvis intet er gemt endnu), og sender
-//          en ETag-header med, der identificerer netop denne udgave.
+//          et versionsmærke med (header X-Dlh-Version).
 //   PUT -> gemmer request-body'en under koden/nøglen, men KUN hvis intet er
-//          ændret siden klienten sidst hentede (se "If-Match" nedenfor).
+//          ændret siden klienten sidst hentede (se X-Dlh-If-Version nedenfor).
 //
 // Betinget skrivning (kapløbs-beskyttelse):
 // Med flere enheder aktive samtidig kan to enheder nå at hente, lægge
@@ -16,12 +16,19 @@
 // fuldstændigt, selvom begges lokale sammenlægning var korrekt - det er
 // det, der fik enheder til at vise forskellige, indbyrdes uenige tal.
 //
-// Klienten sender derfor en "If-Match: <etag>" header med hvert PUT,
-// baseret på den ETag den fik ved sidste GET (eller "If-Match: __new__"
-// hvis den tror, at intet er gemt endnu). Netlify Blobs' onlyIfMatch/
-// onlyIfNew sikrer, at skrivningen kun gennemføres, hvis det stadig
-// passer - ellers svares der 409 (Konflikt), og klienten henter den
-// nyeste udgave, lægger sammen igen, og prøver på ny.
+// Klienten sender derfor en "X-Dlh-If-Version: <version>" header med hvert
+// PUT, baseret på den version den fik ved sidste GET (eller "__new__" hvis
+// den tror, at intet er gemt endnu). Netlify Blobs' onlyIfMatch/onlyIfNew
+// sikrer, at skrivningen kun gennemføres, hvis det stadig passer - ellers
+// svares der 409 (Konflikt), og klienten henter den nyeste udgave, lægger
+// sammen igen, og prøver på ny.
+//
+// Bevidst IKKE de "rigtige" HTTP-header-navne ETag/If-Match: de har strenge
+// formaterings-/anførselstegn-regler (RFC 7232) og kan risikere at blive
+// omskrevet eller fjernet af mellemliggende lag (CDN/cache), der selv
+// forsøger at "forstå" dem. Med egne header-navne (X-Dlh-...) er der
+// ingen indbygget fortolkning noget sted - kun rå strenge, der sendes og
+// læses igen, uændret.
 import { getStore } from "https://esm.sh/@netlify/blobs@10";
 
 export default async (request, context) => {
@@ -39,22 +46,22 @@ export default async (request, context) => {
 
   if (request.method === "PUT") {
     const body = await request.text();
-    const ifMatch = request.headers.get("If-Match");
+    const ifVersion = request.headers.get("X-Dlh-If-Version");
 
     let result;
-    if (!ifMatch || ifMatch === "__new__") {
+    if (!ifVersion || ifVersion === "__new__") {
       // Klienten mener, intet er gemt endnu - skriv kun hvis det stemmer.
       result = await store.set(blobKey, body, { onlyIfNew: true });
     } else {
-      // Klienten så denne ETag sidst - skriv kun hvis den stadig er aktuel.
-      result = await store.set(blobKey, body, { onlyIfMatch: ifMatch });
+      // Klienten så denne version sidst - skriv kun hvis den stadig er aktuel.
+      result = await store.set(blobKey, body, { onlyIfMatch: ifVersion });
     }
 
     if (!result.modified) {
       return new Response("Konflikt: data er ændret siden sidst hentet", { status: 409 });
     }
     const headers = { "Content-Type": "text/plain" };
-    if (result.etag) headers["ETag"] = result.etag;
+    if (result.etag) headers["X-Dlh-Version"] = result.etag;
     return new Response("ok", { status: 200, headers });
   }
 
@@ -64,7 +71,7 @@ export default async (request, context) => {
       return new Response("Ikke fundet", { status: 404 });
     }
     const headers = { "Content-Type": "application/json" };
-    if (result.etag) headers["ETag"] = result.etag;
+    if (result.etag) headers["X-Dlh-Version"] = result.etag;
     return new Response(result.data, { status: 200, headers });
   }
 

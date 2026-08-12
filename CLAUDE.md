@@ -125,6 +125,16 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     `report`-nøglen (selve den åbne rapport-formular) er bevidst IKKE
     lavet om — det er reelt et andet problem (sammenlægning af
     formular-felter under samtidig redigering), ikke rettet endnu.
+  - **Versionsmærket sendes som egne header-navne, ikke "rigtige" HTTP
+    ETag/If-Match** (`X-Dlh-Version`/`X-Dlh-If-Version`). Første udgave
+    brugte ETag/If-Match, men det gjorde at gem-kald konsekvent troede,
+    intet var gemt endnu (tom/ulæselig version ved hentning), og derfor
+    altid endte i konflikt og gav op efter 6 forsøg — data blev kun
+    gemt lokalt, aldrig sendt videre. Årsagen er ikke 100 % bekræftet
+    (mistanke: ETag/If-Match har strenge formaterings-/anførselstegns-
+    regler, som et mellemliggende lag kan have rettet i eller fjernet),
+    men da egne header-navne (ingen indbygget fortolkning noget sted)
+    løste det, er det den nuværende, robuste løsning.
 - **Optælling-fane** (tredje fane, erstattede den tidligere AI-chat-fane
   "Struktur & optimering"): opdelt i **rum** (fx et fysisk depotrum) — man
   opretter selv rum via "+ Nyt rum" (`window.__dlhAddRoom` m.fl.), skifter
