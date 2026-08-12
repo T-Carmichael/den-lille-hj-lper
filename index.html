@@ -1052,19 +1052,33 @@
     // forsøg på at gemme (409 Konflikt), hentes den nyeste udgave igen, og
     // der lægges sammen og prøves igen - op til nogle få gange, hvorefter
     // det opgives stille (næste automatiske synkronisering prøver igen).
+    //
+    // FEJLSIKKER: intet herfra må nogensinde vise en fejl til brugeren eller
+    // true de allerede gemte lokale data. fetchWithEtag/putWithEtag fanger
+    // allerede selv netværksfejl, men selve mergeFn-kaldet er brugerens/
+    // appens egen logik og kan i princippet støde på noget uventet (fx en
+    // beskadiget post et sted i den hentede historik) - derfor er HELE
+    // forsøget pakket ind i try/catch. Går noget galt, opgives dette
+    // synkroniseringsforsøg simpelthen stille, og de lokale data (som
+    // allerede er gemt, FØR denne funktion overhovedet kaldes) rører vi
+    // ikke ved. Automatisk synkronisering prøver igen af sig selv senere.
     async function safeMergePush(key, localData, mergeFn) {
       if (!syncCode) return localData;
-      var data = localData;
-      for (var attempt = 0; attempt < 6; attempt++) {
-        var remote = await fetchWithEtag(key);
-        if (remote === null) return data; // netværksfejl - prøv igen ved næste automatiske synk
-        var merged = mergeFn(data, remote.data === null ? [] : remote.data);
-        var result = await putWithEtag(key, merged, remote.etag);
-        if (result === "ok") return merged;
-        if (result === "conflict") { data = merged; continue; }
-        return merged; // rigtig fejl (ikke et kapløb) - opgiv stille denne gang
+      try {
+        var data = localData;
+        for (var attempt = 0; attempt < 6; attempt++) {
+          var remote = await fetchWithEtag(key);
+          if (remote === null) return data; // netværksfejl - prøv igen ved næste automatiske synk
+          var merged = mergeFn(data, remote.data === null ? [] : remote.data);
+          var result = await putWithEtag(key, merged, remote.etag);
+          if (result === "ok") return merged;
+          if (result === "conflict") { data = merged; continue; }
+          return merged; // rigtig fejl (ikke et kapløb) - opgiv stille denne gang
+        }
+        return data;
+      } catch (e) {
+        return localData; // noget uventet gik galt - rør ikke ved de lokale data
       }
-      return data;
     }
 
     var elDot = document.getElementById("sync-dot");
@@ -1347,10 +1361,12 @@
 
     async function pushHistory(history) {
       if (!syncCode) return;
-      var merged = await safeMergePush("history", history, function (a, b) {
-        return mergeHistory(a, migrateHistoryList(b));
-      });
-      saveHistoryLocal(merged);
+      try {
+        var merged = await safeMergePush("history", history, function (a, b) {
+          return mergeHistory(a, migrateHistoryList(b));
+        });
+        saveHistoryLocal(merged);
+      } catch (e) {} // synk må aldrig kunne vælte en gemning - data er allerede gemt lokalt
     }
 
     async function pullHistoryRemote() {
@@ -1411,8 +1427,20 @@
         items: state.items || [],
         savedAt: new Date().toISOString()
       };
-      var history = mergeHistory(migrateHistoryList(loadHistoryLocal()), migrateHistoryList([entry]));
-      saveHistoryLocal(history);
+      // Sammenlægning med eksisterende lokal historik må aldrig kunne
+      // forhindre selve gemningen. Går noget uventet galt her, forsøges en
+      // simpel, sikker tilføjelse i stedet (erstat kun evt. eksisterende
+      // punkt for netop denne dato, rør ikke ved resten) - så vi i det
+      // værste tilfælde stadig ikke overskriver/mister anden historik.
+      var history;
+      try {
+        history = mergeHistory(migrateHistoryList(loadHistoryLocal()), migrateHistoryList([entry]));
+      } catch (e) {
+        var raw = loadHistoryLocal();
+        if (!Array.isArray(raw)) raw = [];
+        history = raw.filter(function (d) { return d && d.date !== date; }).concat([entry]);
+      }
+      try { saveHistoryLocal(history); } catch (e) { return { ok: false }; }
       if (syncCode) await pushHistory(history);
 
       // Fjern de nu-loggede "Udført"-opgaver fra selve formularen, så de ikke
@@ -1436,15 +1464,20 @@
     // der stadig mangler et rigtigt id, ved med at blive opfattet som "nye"
     // ved hver synkronisering, og dubletter vokser for hver gang.
     window.__dlhRefreshHistory = async function () {
-      var local = migrateHistoryList(loadHistoryLocal());
-      saveHistoryLocal(local);
-      if (!syncCode) return local;
-      var remote = await pullHistoryRemote();
-      if (remote === null) return local;
-      var merged = mergeHistory(local, migrateHistoryList(remote));
-      saveHistoryLocal(merged);
-      await pushHistory(merged);
-      return merged;
+      var local = loadHistoryLocal();
+      try {
+        local = migrateHistoryList(local);
+        saveHistoryLocal(local);
+        if (!syncCode) return local;
+        var remote = await pullHistoryRemote();
+        if (remote === null) return local;
+        var merged = mergeHistory(local, migrateHistoryList(remote));
+        saveHistoryLocal(merged);
+        await pushHistory(merged);
+        return merged;
+      } catch (e) {
+        return local; // opdatering fejlede uventet - rør ikke ved de lokale data, prøv igen senere
+      }
     };
 
     // Sletter ét enkelt punkt fra historikken (bruges af Opgaveoverblikkets
@@ -1565,8 +1598,10 @@
 
     async function pushUpcoming(list) {
       if (!syncCode) return;
-      var merged = await safeMergePush("upcoming", list, mergeUpcoming);
-      saveUpcomingLocal(merged);
+      try {
+        var merged = await safeMergePush("upcoming", list, mergeUpcoming);
+        saveUpcomingLocal(merged);
+      } catch (e) {}
     }
 
     async function pullUpcomingRemote() {
@@ -1639,13 +1674,17 @@
     // med det lokale, og sender resultatet op igen - samme princip som historikken ovenfor.
     window.__dlhRefreshUpcoming = async function () {
       var local = loadUpcomingLocal();
-      if (!syncCode) return local;
-      var remote = await pullUpcomingRemote();
-      if (remote === null) return local;
-      var merged = mergeUpcoming(local, remote);
-      saveUpcomingLocal(merged);
-      await pushUpcoming(merged);
-      return merged;
+      try {
+        if (!syncCode) return local;
+        var remote = await pullUpcomingRemote();
+        if (remote === null) return local;
+        var merged = mergeUpcoming(local, remote);
+        saveUpcomingLocal(merged);
+        await pushUpcoming(merged);
+        return merged;
+      } catch (e) {
+        return local;
+      }
     };
 
     // ---------- depotrum: rum + optælling (til Optælling-fanen) ----------
@@ -1686,8 +1725,10 @@
     }
     async function pushRooms(list) {
       if (!syncCode) return;
-      var merged = await safeMergePush("rum", list, mergeById);
-      saveRoomsLocal(merged);
+      try {
+        var merged = await safeMergePush("rum", list, mergeById);
+        saveRoomsLocal(merged);
+      } catch (e) {}
     }
     async function pullRoomsRemote() {
       if (!syncCode) return null;
@@ -1700,12 +1741,16 @@
     }
     async function freshRooms() {
       var local = loadRoomsLocal();
-      if (!syncCode) return local;
-      var remote = await pullRoomsRemote();
-      if (remote === null) return local;
-      var merged = mergeById(local, remote);
-      saveRoomsLocal(merged);
-      return merged;
+      try {
+        if (!syncCode) return local;
+        var remote = await pullRoomsRemote();
+        if (remote === null) return local;
+        var merged = mergeById(local, remote);
+        saveRoomsLocal(merged);
+        return merged;
+      } catch (e) {
+        return local;
+      }
     }
 
     function loadCountLocal() {
@@ -1717,8 +1762,10 @@
     }
     async function pushCount(list) {
       if (!syncCode) return;
-      var merged = await safeMergePush("optaelling", list, mergeById);
-      saveCountLocal(merged);
+      try {
+        var merged = await safeMergePush("optaelling", list, mergeById);
+        saveCountLocal(merged);
+      } catch (e) {}
     }
     async function pullCountRemote() {
       if (!syncCode) return null;
@@ -1731,12 +1778,16 @@
     }
     async function freshCount() {
       var local = loadCountLocal();
-      if (!syncCode) return local;
-      var remote = await pullCountRemote();
-      if (remote === null) return local;
-      var merged = mergeById(local, remote);
-      saveCountLocal(merged);
-      return merged;
+      try {
+        if (!syncCode) return local;
+        var remote = await pullCountRemote();
+        if (remote === null) return local;
+        var merged = mergeById(local, remote);
+        saveCountLocal(merged);
+        return merged;
+      } catch (e) {
+        return local;
+      }
     }
 
     window.__dlhGetRooms = function () {
@@ -1789,7 +1840,7 @@
 
     window.__dlhRefreshRooms = async function () {
       var merged = await freshRooms();
-      await pushRooms(merged);
+      try { await pushRooms(merged); } catch (e) {}
       return merged;
     };
 
@@ -1868,7 +1919,7 @@
 
     window.__dlhRefreshCount = async function () {
       var merged = await freshCount();
-      await pushCount(merged);
+      try { await pushCount(merged); } catch (e) {}
       return merged;
     };
 
@@ -2578,18 +2629,27 @@
         if(!confirm("Fandt " + count + " dublet" + (count === 1 ? "" : "ter") + " (samme titel/beskrivelse/ansvarlig på samme dato). Fjern dem? Den bedste status (Udført > Afventer) beholdes.")) return;
         var btn = this;
         btn.textContent = "Rydder op...";
-        var removed = await window.__dlhRemoveDuplicateHistoryItems();
-        renderList();
-        btn.textContent = "🧹 Ryd dubletter";
-        alert("Fjernede " + removed + " dublet" + (removed === 1 ? "" : "ter") + ".");
+        try {
+          var removed = await window.__dlhRemoveDuplicateHistoryItems();
+          alert("Fjernede " + removed + " dublet" + (removed === 1 ? "" : "ter") + ".");
+        } catch (e) {
+          alert("Kunne ikke rydde dubletter lige nu. Prøv igen om lidt.");
+        } finally {
+          renderList();
+          btn.textContent = "🧹 Ryd dubletter";
+        }
       });
       document.getElementById("ov-list").addEventListener("click", async function(e){
         var doneBtn = e.target.closest(".ov-task-done");
         if(doneBtn){
           if(!requireOvPassword()) return;
           doneBtn.disabled = true;
-          await window.__dlhSetHistoryItemStatus(doneBtn.dataset.date, parseInt(doneBtn.dataset.idx, 10), "OK");
-          renderList();
+          try {
+            await window.__dlhSetHistoryItemStatus(doneBtn.dataset.date, parseInt(doneBtn.dataset.idx, 10), "OK");
+          } catch (e) {
+          } finally {
+            renderList();
+          }
           return;
         }
         var btn = e.target.closest(".ov-task-delete");
@@ -2597,12 +2657,16 @@
         if(!requireOvPassword()) return;
         if(!confirm("Slet denne opgave permanent? Det kan ikke fortrydes.")) return;
         btn.disabled = true;
-        if(btn.dataset.upid){
-          await window.__dlhDeleteUpcomingEntry(btn.dataset.upid);
-        } else {
-          await window.__dlhDeleteHistoryItem(btn.dataset.date, parseInt(btn.dataset.idx, 10));
+        try {
+          if(btn.dataset.upid){
+            await window.__dlhDeleteUpcomingEntry(btn.dataset.upid);
+          } else {
+            await window.__dlhDeleteHistoryItem(btn.dataset.date, parseInt(btn.dataset.idx, 10));
+          }
+        } catch (e) {
+        } finally {
+          renderList();
         }
-        renderList();
       });
     }
 
@@ -2776,11 +2840,13 @@
     // trods af at være forbundet. Poller nu i baggrunden med samme rytme.
     setInterval(async function(){
       if(!built) return;
-      if(window.__dlhMigrateHistoryItemIds) window.__dlhMigrateHistoryItemIds();
-      var freshHistory = await window.__dlhRefreshHistory();
-      if(freshHistory){ renderList(); renderGenRepLocations(); }
-      var freshUpcoming = await window.__dlhRefreshUpcoming();
-      if(freshUpcoming) renderUpcoming();
+      try {
+        if(window.__dlhMigrateHistoryItemIds) window.__dlhMigrateHistoryItemIds();
+        var freshHistory = await window.__dlhRefreshHistory();
+        if(freshHistory){ renderList(); renderGenRepLocations(); }
+        var freshUpcoming = await window.__dlhRefreshUpcoming();
+        if(freshUpcoming) renderUpcoming();
+      } catch (e) {} // baggrunds-opdatering må aldrig kunne vise en fejl - prøver bare igen om 20 sek.
     }, 20000);
   })();
 </script>

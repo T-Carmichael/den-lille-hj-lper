@@ -135,6 +135,20 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     regler, som et mellemliggende lag kan have rettet i eller fjernet),
     men da egne header-navne (ingen indbygget fortolkning noget sted)
     løste det, er det den nuværende, robuste løsning.
+  - **Hele synk-kæden er fejlsikret**: `safeMergePush` og alle fire
+    `pushXxx`/`freshXxx`/`__dlhRefreshXxx`-funktioner (historik, kommende
+    opgaver, rum, optælling) samt den automatiske baggrunds-polling er
+    pakket ind i try/catch. Går sammenlægning eller selve netværkskaldet
+    galt (fx uventet formet data fra serveren), opgives synkroniseringen
+    for den omgang stille - de allerede lokalt gemte data røres ikke, og
+    der vises ALDRIG en fejl for brugeren af den grund. `__dlhLogToday`
+    har derudover et sikkert faldback, hvis selve den lokale
+    sammenlægning fejler (tilføjer dagens punkter uden at overskrive
+    anden historik, i stedet for slet ikke at gemme). Knap-handlerne i
+    Opgaveoverblik (status, slet, ryd dubletter) bruger try/finally, så
+    en knap aldrig kan blive hængende i "disabled" tilstand uden
+    forklaring. Dette er bevidst prioriteret højt, fordi appen nu bruges
+    af flere personer samtidig til rigtigt arbejde.
 - **Optælling-fane** (tredje fane, erstattede den tidligere AI-chat-fane
   "Struktur & optimering"): opdelt i **rum** (fx et fysisk depotrum) — man
   opretter selv rum via "+ Nyt rum" (`window.__dlhAddRoom` m.fl.), skifter
