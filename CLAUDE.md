@@ -108,6 +108,23 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     "+1" på samme ting uden at have opdateret imellem, ikke overskriver
     hinandens ændring (ellers baserer den sidste "+1" sig på et forældet
     antal, og den anden enheds klik forsvinder stille).
+  - **Gem-kald er ETag-beskyttede mod kapløb mellem flere samtidige
+    enheder** (`fetchWithEtag`/`putWithEtag`/`safeMergePush` i sync-IIFE'en,
+    samt selve edge-funktionen `netlify/edge-functions/sync.js`, som nu kun
+    skriver med Netlify Blobs' `onlyIfMatch`/`onlyIfNew` og svarer 409 ved
+    konflikt). Før dette skrev edge-funktionen blindt, uanset hvad der lå
+    der i forvejen — den korrekte sammenlægning skete kun i browseren, FØR
+    afsendelse, hvilket ikke hjælper hvis to enheder gemmer med få
+    sekunders mellemrum: den sidste vandt og overskrev fuldstændigt den
+    førstes (allerede korrekt sammenlagte) data. Ramte i praksis, da
+    appen gik fra én til flere samtidige brugere. `pushHistory`,
+    `pushUpcoming`, `pushRooms` og `pushCount` bruger nu alle
+    `safeMergePush`, som ved konflikt henter den nyeste udgave igen,
+    lægger sammen (med den relevante merge-funktion) og prøver igen (op
+    til 6 forsøg, ellers opgives stille til næste automatiske synk).
+    `report`-nøglen (selve den åbne rapport-formular) er bevidst IKKE
+    lavet om — det er reelt et andet problem (sammenlægning af
+    formular-felter under samtidig redigering), ikke rettet endnu.
 - **Optælling-fane** (tredje fane, erstattede den tidligere AI-chat-fane
   "Struktur & optimering"): opdelt i **rum** (fx et fysisk depotrum) — man
   opretter selv rum via "+ Nyt rum" (`window.__dlhAddRoom` m.fl.), skifter

@@ -1009,6 +1009,58 @@
     var reportReady = false;
     var pollTimer = null;
 
+    // Henter en nøgle og dens ETag (en slags "versionsmærke", som ændrer sig,
+    // hver gang nøglen gemmes). Bruges sammen med putWithEtag herunder til at
+    // sikre, at to enheder aldrig kan overskrive hinandens gemte data, bare
+    // fordi de gemmer næsten samtidig - se netlify/edge-functions/sync.js.
+    async function fetchWithEtag(key) {
+      try {
+        var res = await fetch(SYNC_API + "/" + syncCode + "/" + key);
+        if (res.status === 404) return { data: null, etag: "" };
+        if (!res.ok) return null;
+        var etag = res.headers.get("ETag") || "";
+        var data = await res.json();
+        return { data: data, etag: etag };
+      } catch (e) { return null; }
+    }
+
+    // Gemmer kun, hvis ETag'en stadig er aktuel (dvs. intet er ændret siden
+    // vi hentede den). Returnerer "ok", "conflict" (en anden enhed nåede at
+    // gemme noget imellem vores hentning og forsøg på at gemme) eller "error".
+    async function putWithEtag(key, dataObj, etag) {
+      try {
+        var res = await fetch(SYNC_API + "/" + syncCode + "/" + key, {
+          method: "PUT",
+          headers: { "If-Match": etag || "__new__" },
+          body: JSON.stringify(dataObj)
+        });
+        if (res.status === 409) return "conflict";
+        if (!res.ok) return "error";
+        return "ok";
+      } catch (e) { return "error"; }
+    }
+
+    // Generisk, sikker "hent nyeste, læg sammen, gem" - bruges af alle fire
+    // datatyper (rapport, historik, kommende opgaver, depotrum/optælling).
+    // Hvis en anden enhed nåede at gemme noget imellem vores hentning og
+    // forsøg på at gemme (409 Konflikt), hentes den nyeste udgave igen, og
+    // der lægges sammen og prøves igen - op til nogle få gange, hvorefter
+    // det opgives stille (næste automatiske synkronisering prøver igen).
+    async function safeMergePush(key, localData, mergeFn) {
+      if (!syncCode) return localData;
+      var data = localData;
+      for (var attempt = 0; attempt < 6; attempt++) {
+        var remote = await fetchWithEtag(key);
+        if (remote === null) return data; // netværksfejl - prøv igen ved næste automatiske synk
+        var merged = mergeFn(data, remote.data === null ? [] : remote.data);
+        var result = await putWithEtag(key, merged, remote.etag);
+        if (result === "ok") return merged;
+        if (result === "conflict") { data = merged; continue; }
+        return merged; // rigtig fejl (ikke et kapløb) - opgiv stille denne gang
+      }
+      return data;
+    }
+
     var elDot = document.getElementById("sync-dot");
     var elRowSetup = document.getElementById("sync-row-setup");
     var elRowConnected = document.getElementById("sync-row-connected");
@@ -1289,9 +1341,10 @@
 
     async function pushHistory(history) {
       if (!syncCode) return;
-      try {
-        await fetch(SYNC_API + "/" + syncCode + "/history", { method: "PUT", body: JSON.stringify(history) });
-      } catch (e) {}
+      var merged = await safeMergePush("history", history, function (a, b) {
+        return mergeHistory(a, migrateHistoryList(b));
+      });
+      saveHistoryLocal(merged);
     }
 
     async function pullHistoryRemote() {
@@ -1506,9 +1559,8 @@
 
     async function pushUpcoming(list) {
       if (!syncCode) return;
-      try {
-        await fetch(SYNC_API + "/" + syncCode + "/upcoming", { method: "PUT", body: JSON.stringify(list) });
-      } catch (e) {}
+      var merged = await safeMergePush("upcoming", list, mergeUpcoming);
+      saveUpcomingLocal(merged);
     }
 
     async function pullUpcomingRemote() {
@@ -1628,9 +1680,8 @@
     }
     async function pushRooms(list) {
       if (!syncCode) return;
-      try {
-        await fetch(SYNC_API + "/" + syncCode + "/rum", { method: "PUT", body: JSON.stringify(list) });
-      } catch (e) {}
+      var merged = await safeMergePush("rum", list, mergeById);
+      saveRoomsLocal(merged);
     }
     async function pullRoomsRemote() {
       if (!syncCode) return null;
@@ -1660,9 +1711,8 @@
     }
     async function pushCount(list) {
       if (!syncCode) return;
-      try {
-        await fetch(SYNC_API + "/" + syncCode + "/optaelling", { method: "PUT", body: JSON.stringify(list) });
-      } catch (e) {}
+      var merged = await safeMergePush("optaelling", list, mergeById);
+      saveCountLocal(merged);
     }
     async function pullCountRemote() {
       if (!syncCode) return null;
