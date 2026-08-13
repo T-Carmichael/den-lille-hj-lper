@@ -1022,9 +1022,11 @@
     }
 
     // Gemmer kun, hvis versionen stadig er aktuel (dvs. intet er ændret
-    // siden vi hentede den). Returnerer "ok", "conflict" (en anden enhed
-    // nåede at gemme noget imellem vores hentning og forsøg på at gemme)
-    // eller "error".
+    // siden vi hentede den). Returnerer altid { status, etag }: status er
+    // "ok", "conflict" (en anden enhed nåede at gemme noget imellem vores
+    // hentning og forsøg på at gemme) eller "error". Ved "ok" sendes den NYE
+    // version med tilbage (fra serverens svar), så den kan bruges til næste
+    // gemning uden en ekstra hentning bagefter.
     async function putWithEtag(key, dataObj, etag) {
       try {
         var res = await fetch(SYNC_API + "/" + syncCode + "/" + key, {
@@ -1032,10 +1034,10 @@
           headers: { "X-Dlh-If-Version": etag || "__new__" },
           body: JSON.stringify(dataObj)
         });
-        if (res.status === 409) return "conflict";
-        if (!res.ok) return "error";
-        return "ok";
-      } catch (e) { return "error"; }
+        if (res.status === 409) return { status: "conflict", etag: null };
+        if (!res.ok) return { status: "error", etag: null };
+        return { status: "ok", etag: res.headers.get("X-Dlh-Version") || null };
+      } catch (e) { return { status: "error", etag: null }; }
     }
 
     // Generisk, sikker "hent nyeste, læg sammen, gem" - bruges af alle fire
@@ -1063,8 +1065,8 @@
           if (remote === null) return data; // netværksfejl - prøv igen ved næste automatiske synk
           var merged = mergeFn(data, remote.data === null ? [] : remote.data);
           var result = await putWithEtag(key, merged, remote.etag);
-          if (result === "ok") return merged;
-          if (result === "conflict") { data = merged; continue; }
+          if (result.status === "ok") return merged;
+          if (result.status === "conflict") { data = merged; continue; }
           return merged; // rigtig fejl (ikke et kapløb) - opgiv stille denne gang
         }
         return data;
@@ -1151,6 +1153,17 @@
     // for netop at kunne opdage forældet data ved en efterfølgende
     // genoprettelse af forbindelsen på samme enhed/side.
     var knownServerReportSavedAt = null;
+    // Rapportens versionsmærke (samme mekanisme som resten af synk'en, se
+    // fetchWithEtag/putWithEtag) - MANGLEDE tidligere helt for "report"-
+    // nøglen: pushState() sendte ALDRIG en X-Dlh-If-Version-header, så efter
+    // allerførste gemning for en forbindelseskode blev enhver senere gemning
+    // (fra hvilken som helst enhed, inkl. den samme) afvist af serveren med
+    // 409 - og da pushState() aldrig tjekkede svarstatus, blev det opfattet
+    // som en succesfuld gemning. I praksis holdt rapport-fanens synk derfor
+    // næsten aldrig, efter den første gemning på en kode. Rettet ved at give
+    // "report" samme version-sporing som historik/kommende opgaver/rum/
+    // optælling allerede har.
+    var reportEtag = null;
 
     async function pushState() {
       if (!syncCode || !reportReady) return;
@@ -1159,12 +1172,31 @@
       if (!state) return;
       pushInFlight = true;
       try {
-        await fetch(SYNC_API + "/" + syncCode + "/" + SYNC_KEY, {
-          method: "PUT",
-          body: JSON.stringify(state)
-        });
-        knownServerReportSavedAt = state.savedAt;
-        setStatus("Forbundet · gemt " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }));
+        // Sender med reportEtag (versionen vi selv sidst har set/gemt) -
+        // afvises det (409, en anden enhed nåede at gemme noget imellem),
+        // hentes den friske version straks og forsøges igen, i stedet for
+        // (som før) slet ikke at tjekke om gemningen overhovedet lykkedes.
+        // Ingen felt-for-felt-sammenlægning her - denne enheds åbne formular
+        // er det, brugeren ser og redigerer lige nu, så den vinder ved en
+        // konflikt (status-/sletteændringer fra Opgaveoverblik på ANDRE
+        // enheder når frem via historikken og næste "Hent nyeste"/baggrunds-
+        // poll i stedet, se __dlhSetHistoryItemStatus/removeItemFromOpenReport).
+        var result = { status: "conflict" };
+        for (var attempt = 0; attempt < 3 && result.status === "conflict"; attempt++) {
+          result = await putWithEtag(SYNC_KEY, state, reportEtag);
+          if (result.status === "conflict") {
+            var fresh = await fetchWithEtag(SYNC_KEY);
+            if (!fresh) break;
+            reportEtag = fresh.etag;
+          }
+        }
+        if (result.status === "ok") {
+          if (result.etag) reportEtag = result.etag;
+          knownServerReportSavedAt = state.savedAt;
+          setStatus("Forbundet · gemt " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }));
+        } else {
+          setStatus("Forbundet · kunne ikke gemme (tjek internet)");
+        }
       } catch (e) {
         setStatus("Forbundet · kunne ikke gemme (tjek internet)");
       } finally {
@@ -1180,13 +1212,14 @@
       if (showStatus) setStatus("Henter nyeste...");
       pullInFlight = true;
       try {
-        var res = await fetch(SYNC_API + "/" + syncCode + "/" + SYNC_KEY);
-        if (res.status === 404) {
+        var remote = await fetchWithEtag(SYNC_KEY);
+        if (remote === null) throw new Error("fetch failed");
+        if (remote.data === null) {
+          reportEtag = remote.etag || null;
           if (showStatus) setStatus("Forbundet · ingen data endnu");
           return;
         }
-        if (!res.ok) throw new Error("fetch failed");
-        var data = await res.json();
+        var data = remote.data;
         // "report"-nøglen er (i modsætning til historik/kommende opgaver/rum/
         // optælling) IKKE sammenlagt punkt for punkt ved gem - det er stadig
         // et helt overskriv. Men vi kan opdage, når det vi ER VED AT HENTE
@@ -1201,10 +1234,15 @@
         if (knownServerReportSavedAt && data && data.savedAt &&
             new Date(data.savedAt) < new Date(knownServerReportSavedAt)) {
           if (showStatus) setStatus("Forbundet · din udgave er nyest");
+          // Versionen skal opdateres, SELVOM vi ikke bruger dataen - ellers
+          // vil den kommende schedulePush() nedenfor sende med en forældet
+          // reportEtag og blive afvist (409) af serveren.
+          reportEtag = remote.etag || reportEtag;
           schedulePush(); // hjælp serveren med at indhente vores nyere udgave
           return;
         }
         setReportState(data);
+        reportEtag = remote.etag || reportEtag;
         knownServerReportSavedAt = data && data.savedAt ? data.savedAt : knownServerReportSavedAt;
         setStatus("Forbundet · opdateret " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }));
       } catch (e) {
