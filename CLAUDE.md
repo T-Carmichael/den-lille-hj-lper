@@ -173,9 +173,27 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     `safeMergePush`, som ved konflikt henter den nyeste udgave igen,
     lægger sammen (med den relevante merge-funktion) og prøver igen (op
     til 6 forsøg, ellers opgives stille til næste automatiske synk).
-    `report`-nøglen (selve den åbne rapport-formular) er bevidst IKKE
-    lavet om — det er reelt et andet problem (sammenlægning af
-    formular-felter under samtidig redigering), ikke rettet endnu.
+    `report`-nøglen (selve den åbne rapport-formular) bruger stadig IKKE
+    denne fulde ETag/sammenlægnings-mekanisme — det er reelt et andet,
+    sværere problem (sammenlægning af formular-felter under samtidig
+    redigering af samme punkt), ikke rettet.
+  - **`report`-nøglen har dog et lettere værn mod at hente en FORÆLDET
+    udgave ned over en nyere lokal** (`knownServerReportSavedAt` i
+    sync-IIFE'en, brugt i `pullState`): før en hentet rapport-udgave
+    lægges ned over den, der vises lige nu, tjekkes det, at den hentede
+    udgaves `savedAt` rent faktisk er nyere end den seneste udgave, vi
+    selv VED serveren har (fra vores eget seneste gem eller hentning). Er
+    den hentede ældre, kasseres den (og der forsøges i stedet sendt en
+    frisk gemning op, så serveren selv indhenter det). Rettet fordi
+    allerede udførte/fjernede opgaver kunne "komme igen" i selve
+    Rapport-fanen, typisk lige efter man afbrød og genoprettede
+    forbindelsen: uden dette værn var `pullState()` et blindt overskriv,
+    uanset hvor forældet den hentede udgave var (fx fra en anden enhed,
+    der ikke havde opdateret sig for nyligt, og hvis gemning nåede
+    serveren efter denne enheds nyere, ryddede udgave). Løser IKKE det
+    bredere, ovenstående problem med samtidig redigering af samme felt -
+    kun det specifikke "en hel, forældet formular-udgave overskriver en
+    nyere" scenarie.
   - **Versionsmærket sendes som egne header-navne, ikke "rigtige" HTTP
     ETag/If-Match** (`X-Dlh-Version`/`X-Dlh-If-Version`). Første udgave
     brugte ETag/If-Match, men det gjorde at gem-kald konsekvent troede,

@@ -1120,6 +1120,13 @@
     // tilbage), så det er ikke et sjældent tilfælde.
     var pullInFlight = false;
     var pushInFlight = false;
+    // Husker savedAt fra den nyeste rapport-udgave, vi selv VED serveren har
+    // (enten fordi vi lige har sendt den, eller lige har hentet den) - bruges
+    // af pullState() til at opdage en forældet hentning (se dér). Nulstilles
+    // IKKE ved "Afbryd forbindelse" (kun syncCode ryddes) - det er bevidst,
+    // for netop at kunne opdage forældet data ved en efterfølgende
+    // genoprettelse af forbindelsen på samme enhed/side.
+    var knownServerReportSavedAt = null;
 
     async function pushState() {
       if (!syncCode || !reportReady) return;
@@ -1132,6 +1139,7 @@
           method: "PUT",
           body: JSON.stringify(state)
         });
+        knownServerReportSavedAt = state.savedAt;
         setStatus("Forbundet · gemt " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }));
       } catch (e) {
         setStatus("Forbundet · kunne ikke gemme (tjek internet)");
@@ -1155,7 +1163,25 @@
         }
         if (!res.ok) throw new Error("fetch failed");
         var data = await res.json();
+        // "report"-nøglen er (i modsætning til historik/kommende opgaver/rum/
+        // optælling) IKKE sammenlagt punkt for punkt ved gem - det er stadig
+        // et helt overskriv. Men vi kan opdage, når det vi ER VED AT HENTE
+        // reelt er ÆLDRE end det, vi selv sidst har sendt op eller hentet -
+        // og i så fald IKKE overskrive med det. Uden dette kunne allerede
+        // udførte/fjernede opgaver "komme igen" i selve rapport-formularen,
+        // typisk lige efter man afbrød og genoprettede forbindelsen (denne
+        // enheds nyere udgave blev overskrevet af en forældet kopi fra
+        // serveren). Mangler savedAt på det hentede (ældre/uventet data),
+        // hentes som hidtil - det er kun en kendt, nyere lokal udgave, der
+        // beskyttes.
+        if (knownServerReportSavedAt && data && data.savedAt &&
+            new Date(data.savedAt) < new Date(knownServerReportSavedAt)) {
+          if (showStatus) setStatus("Forbundet · din udgave er nyest");
+          schedulePush(); // hjælp serveren med at indhente vores nyere udgave
+          return;
+        }
         setReportState(data);
+        knownServerReportSavedAt = data && data.savedAt ? data.savedAt : knownServerReportSavedAt;
         setStatus("Forbundet · opdateret " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }));
       } catch (e) {
         if (showStatus) setStatus("Forbundet · kunne ikke hente (tjek internet)");
