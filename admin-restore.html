@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<title>Erstat serverdata - admin</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; line-height: 1.5; color: #1a1a1a; }
+  h1 { font-size: 1.3rem; }
+  .box { border: 1px solid #ccc; border-radius: 8px; padding: 16px; margin: 16px 0; }
+  .warn { background: #fff3cd; border-color: #e0b400; }
+  .ok { color: #0a7a0a; }
+  .err { color: #b00020; font-weight: bold; }
+  button { font-size: 1rem; padding: 10px 16px; border-radius: 6px; border: 1px solid #888; cursor: pointer; }
+  button.danger { background: #b00020; color: white; border-color: #b00020; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  input[type=text] { font-size: 1rem; padding: 6px; width: 200px; }
+  pre { background: #f5f5f5; padding: 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow: auto; }
+  label { display: block; margin: 8px 0; }
+</style>
+</head>
+<body>
+  <h1>Erstat serverdata for en forbindelseskode</h1>
+  <p>Dette er et internt admin-værktøj, ikke en del af selve appen (ingen
+  knap linker hertil). Det lægger INTET sammen – det ERSTATTER helt det,
+  der ligger på serveren for en forbindelseskode, med indholdet af en
+  backup-fil (den fil du får med 💾-knappen i selve appen). Historik,
+  kommende opgaver, depotrum og depot-optælling erstattes. Selve den åbne
+  rapport-formular ("report") røres ikke.</p>
+
+  <div class="box warn">
+    <strong>Før du klikker "Erstat":</strong> værktøjet henter og gemmer
+    automatisk det, der ligger på serveren LIGE NU, som en downloadbar fil,
+    så du altid kan fortryde ved at køre værktøjet igen med den fil som
+    "backup".
+  </div>
+
+  <div class="box">
+    <label>Forbindelseskode:
+      <input type="text" id="code" value="">
+    </label>
+    <label>Backup-fil (fra 💾-knappen):
+      <input type="file" id="file" accept="application/json">
+    </label>
+  </div>
+
+  <div class="box" id="summaryBox" style="display:none;">
+    <h3>Det, der bliver skrevet (fra backup-filen)</h3>
+    <div id="newSummary"></div>
+    <h3>Det, der ligger på serveren NU (før erstatning)</h3>
+    <div id="oldSummary">henter...</div>
+    <p id="downloadArea"></p>
+  </div>
+
+  <div class="box">
+    <button id="loadBtn">1. Hent nuværende serverdata</button>
+    <button id="goBtn" class="danger" disabled>2. ERSTAT serverdata med backup-filen</button>
+  </div>
+
+  <pre id="log"></pre>
+
+<script>
+// Samme mønster som Opgaveoverblikkets adgangskode - ingen rigtig
+// sikkerhed (siden er offentligt tilgængelig, som resten af appen), kun
+// en let spærre mod at nogen roder ved data ved et uheld.
+var unlocked = false;
+function requirePassword() {
+  if (unlocked) return true;
+  var pw = prompt("Indtast adgangskode for at erstatte serverdata:");
+  if (pw === null) return false;
+  if (pw !== "8961") { alert("Forkert adgangskode."); return false; }
+  unlocked = true;
+  return true;
+}
+
+function log(msg, cls) {
+  var el = document.getElementById("log");
+  var line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function apiBase() {
+  var code = document.getElementById("code").value.trim();
+  return { base: "/api/sync/" + encodeURIComponent(code) + "/", code: code };
+}
+
+async function fetchWithEtag(url) {
+  var res = await fetch(url);
+  if (res.status === 404) return { data: null, etag: "" };
+  if (!res.ok) throw new Error("Kunne ikke hente " + url + " (status " + res.status + ")");
+  var etag = res.headers.get("X-Dlh-Version") || "";
+  var data = await res.json();
+  return { data: data, etag: etag };
+}
+
+async function putWithEtag(url, dataObj, etag) {
+  var res = await fetch(url, {
+    method: "PUT",
+    headers: { "X-Dlh-If-Version": etag || "__new__" },
+    body: JSON.stringify(dataObj)
+  });
+  if (res.status === 409) return { status: "conflict" };
+  if (!res.ok) return { status: "error", code: res.status };
+  return { status: "ok", etag: res.headers.get("X-Dlh-Version") || null };
+}
+
+// Skriver med et par forsøg ved konflikt (samme mønster som selve appen) -
+// men uden at lægge noget sammen: vi vil netop ERSTATTE, så ved konflikt
+// hentes blot den friske version, og vi prøver igen med SAMME data.
+async function replaceKey(base, key, dataObj) {
+  var etag = "";
+  for (var attempt = 0; attempt < 5; attempt++) {
+    var result = await putWithEtag(base + key, dataObj, etag);
+    if (result.status === "ok") return true;
+    if (result.status === "conflict") {
+      var fresh = await fetchWithEtag(base + key);
+      etag = fresh.etag;
+      continue;
+    }
+    throw new Error("Fejl ved skrivning af " + key + " (status " + result.code + ")");
+  }
+  throw new Error("Gav op efter flere forsøg på at skrive " + key + " (bliver ved med konflikt)");
+}
+
+var backup = null;
+
+document.getElementById("file").addEventListener("change", function (e) {
+  var f = e.target.files[0];
+  if (!f) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      backup = JSON.parse(reader.result);
+      document.getElementById("summaryBox").style.display = "block";
+      document.getElementById("newSummary").innerHTML = summarize(backup);
+      if (!document.getElementById("code").value && backup.syncCode) {
+        document.getElementById("code").value = backup.syncCode;
+      }
+      log("Indlæste backup-fil: " + f.name);
+    } catch (err) {
+      log("Kunne ikke læse filen som JSON: " + err.message, "err");
+    }
+  };
+  reader.readAsText(f);
+});
+
+function summarize(b) {
+  var histItems = (b.history || []).reduce(function (n, d) { return n + (d.items || []).length; }, 0);
+  return "Historik: " + (b.history || []).length + " dage, " + histItems + " opgavepunkter i alt<br>" +
+         "Kommende opgaver: " + (b.upcoming || []).length + "<br>" +
+         "Depotrum: " + (b.rooms || []).length + "<br>" +
+         "Depot-optælling: " + (b.count || []).length +
+         (b.syncCode ? "<br>Backup-filens egen kode: " + b.syncCode : "");
+}
+
+document.getElementById("loadBtn").addEventListener("click", async function () {
+  if (!requirePassword()) return;
+  var api = apiBase();
+  if (!api.code) { log("Udfyld forbindelseskoden først.", "err"); return; }
+  var log_ = document.getElementById("log");
+  log_.textContent = "";
+  var btn = this;
+  btn.disabled = true;
+  try {
+    log("Henter nuværende data for kode " + api.code + " ...");
+    var keys = ["history", "upcoming", "rum", "optaelling"];
+    var oldByKey = {};
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      var r = await fetchWithEtag(api.base + k);
+      oldByKey[k] = r.data || [];
+      log("  " + k + ": " + (r.data ? "hentet" : "intet gemt endnu (404)"));
+    }
+    var oldBackupShaped = {
+      exportedAt: new Date().toISOString(),
+      syncCode: api.code,
+      history: oldByKey.history,
+      upcoming: oldByKey.upcoming,
+      rooms: oldByKey.rum,
+      count: oldByKey.optaelling
+    };
+    document.getElementById("oldSummary").innerHTML = summarize(oldBackupShaped);
+    var blob = new Blob([JSON.stringify(oldBackupShaped, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "server-sikkerhedskopi-FOER-erstatning-" + api.code + "-" + Date.now() + ".json";
+    a.textContent = "⬇ Download sikkerhedskopi af det, der lå på serveren FØR erstatning";
+    document.getElementById("downloadArea").innerHTML = "";
+    document.getElementById("downloadArea").appendChild(a);
+    log("Nuværende serverdata hentet og klar til download som sikkerhedskopi.", "ok");
+    document.getElementById("goBtn").disabled = !backup;
+  } catch (err) {
+    log("FEJL ved hentning: " + err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("goBtn").addEventListener("click", async function () {
+  if (!requirePassword()) return;
+  if (!backup) { log("Vælg en backup-fil først.", "err"); return; }
+  var api = apiBase();
+  if (!api.code) { log("Udfyld forbindelseskoden først.", "err"); return; }
+  var typed = prompt("Dette ERSTATTER al historik/kommende opgaver/depotrum/optælling for koden " + api.code + " med indholdet af backup-filen. Alt andet, der måtte ligge på serveren, forsvinder. Skriv ERSTAT for at bekræfte:");
+  if (typed !== "ERSTAT") { log("Afbrudt - der blev ikke skrevet noget.", "err"); return; }
+  var btn = this;
+  btn.disabled = true;
+  try {
+    log("Erstatter historik ...");
+    await replaceKey(api.base, "history", backup.history || []);
+    log("  historik OK", "ok");
+
+    log("Erstatter kommende opgaver ...");
+    await replaceKey(api.base, "upcoming", backup.upcoming || []);
+    log("  kommende opgaver OK", "ok");
+
+    log("Erstatter depotrum ...");
+    await replaceKey(api.base, "rum", backup.rooms || []);
+    log("  depotrum OK", "ok");
+
+    log("Erstatter depot-optælling ...");
+    await replaceKey(api.base, "optaelling", backup.count || []);
+    log("  depot-optælling OK", "ok");
+
+    log("FÆRDIG. Alle enheder, der forbinder med koden " + api.code + " (nye som gamle), vil nu se denne backups data.", "ok");
+  } catch (err) {
+    log("FEJL undervejs: " + err.message, "err");
+    log("Nogle nøgler kan være erstattet, andre ikke - tjek log'en ovenfor for hvilke der nåede at sige OK.", "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
