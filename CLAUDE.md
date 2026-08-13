@@ -97,6 +97,26 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     server-data før sammenlægning - ellers bliver server-punkter uden id
     ved med at blive opfattet som "nye" for hver synkronisering, og
     dubletter vokser i det uendelige (skete i praksis, rettet).
+  - **Hvert punkt har sit eget `updatedAt`, ikke kun dagen som helhed**:
+    når to udgaver af SAMME punkt-id findes under sammenlægning, afgøres
+    vinderen (hvis begge har `updatedAt`) af punktets EGET tidspunkt, ikke
+    af hvilken side der havde det nyeste `day.savedAt`. `updatedAt` sættes
+    dels i `REPORT_HTML` (`touchItemCard` i det ydre script, kaldt fra
+    `.toggle`-klik/`focusout`/`dlh-photo-saved`-lytterne i `reportFrame`'s
+    `"load"`-event, lige før `autoLogToday()`), dels i
+    `__dlhSetHistoryItemStatus` (statusændring i Opgaveoverblik). Mangler
+    `updatedAt` på ét af punkterne (ældre data, eller tombstones fra
+    sletning/"Ryd dubletter", som bevidst ikke sætter det), falder
+    sammenlægningen tilbage til den gamle opførsel (den side, der kaldes
+    "newer", vinder ubetinget).
+    Rettet fordi hele dagens `savedAt` tidligere blev brugt til at afgøre
+    en vinder for ALLE punkter under ét: et statusskift i Opgaveoverblik
+    kunne blive "fortrudt" af en efterfølgende, helt urelateret gemning
+    fra selve rapport-formularen for samme dato (som stadig viste punktets
+    gamle status) - eller omvendt. Oplevet i praksis: "når jeg færdiggøre
+    opgaver inde i rapport fanen, så ændre de ikke status i overbliksfanen,
+    og når jeg så ændre deres status i overbliksfanen så kommer de igen
+    over i rapport fanen".
   - **"🧹 Ryd dubletter"-knap**: finder punkter med identisk
     titel/beskrivelse/ansvarlig på samme dato (typisk rester fra før
     id-migreringen), beholder den bedste status, fjerner resten som
