@@ -45,7 +45,7 @@
 
   <div class="box" id="summaryBox" style="display:none;">
     <h3>Det, der bliver skrevet (fra backup-filen)</h3>
-    <div id="newSummary"></div>
+    <div id="newSummary">(vælg en backup-fil for at se dette)</div>
     <h3>Det, der ligger på serveren NU (før erstatning)</h3>
     <div id="oldSummary">henter...</div>
     <p id="downloadArea"></p>
@@ -161,6 +161,7 @@ document.getElementById("loadBtn").addEventListener("click", async function () {
   if (!api.code) { log("Udfyld forbindelseskoden først.", "err"); return; }
   var log_ = document.getElementById("log");
   log_.textContent = "";
+  document.getElementById("summaryBox").style.display = "block";
   var btn = this;
   btn.disabled = true;
   try {
