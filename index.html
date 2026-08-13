@@ -301,6 +301,13 @@
   .ov-stat span{font-size:11px;color:var(--sub);}
   .ov-stat.ok b{color:#7CD99A;}
   .ov-stat.afv b{color:#FF8F70;}
+  .ov-sync-status{
+    font-size:11.5px;
+    color:var(--sub);
+    text-align:center;
+    margin:-8px 0 14px;
+    min-height:14px;
+  }
   .ov-controls{
     display:flex;
     gap:8px;
@@ -2486,6 +2493,22 @@
     var searchTerm = "";
     var built = false;
 
+    // Viser tydeligt, om tallene i "Opgaver i alt" osv. lige nu bliver
+    // hentet friske fra den delte kode, eller allerede er opdaterede - så
+    // et tal, man ser lige efter at have skiftet enhed, ikke fejlagtigt
+    // fremstår som "forkert", mens det bare stadig venter på at synkronisere.
+    // Viser intet, hvis enheden slet ikke er forbundet (intet at hente).
+    function isOvSyncConnected(){
+      return !!localStorage.getItem("dlh-sync-code");
+    }
+    function setOvSyncStatus(text){
+      var el = document.getElementById("ov-sync-status");
+      if(el) el.textContent = text;
+    }
+    function nowClock(){
+      return new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
+    }
+
     // Beskytter status-ændring, sletning og oprydning i dubletter med en
     // simpel adgangskode, så det ikke sker ved et uheld. Kun en let spærre,
     // ikke rigtig sikkerhed (koden ligger i selve appens kode) - men nok til
@@ -2661,6 +2684,7 @@
             '<div class="ov-stat afv"><b id="ov-afv">0</b><span>Afventer</span></div>' +
             '<div class="ov-stat"><b id="ov-days">0</b><span>Dage logget</span></div>' +
           '</div>' +
+          '<div class="ov-sync-status" id="ov-sync-status"></div>' +
           '<div class="ov-controls">' +
             '<input class="ov-search" id="ov-search" placeholder="Søg i opgaver, beskrivelse, ansvarlig...">' +
             '<div class="ov-filter" id="ov-filter">' +
@@ -2709,10 +2733,13 @@
       });
       document.getElementById("ov-refresh").addEventListener("click", async function(){
         var btn = this;
+        var connected = isOvSyncConnected();
         btn.textContent = "Henter...";
+        if(connected) setOvSyncStatus("🔄 Henter nyeste...");
         await window.__dlhRefreshHistory();
         renderList();
         btn.textContent = "🔄 Opdater";
+        setOvSyncStatus(connected ? "✓ Opdateret " + nowClock() : "");
       });
       document.getElementById("ov-dedupe").addEventListener("click", async function(){
         if(!requireOvPassword()) return;
@@ -2909,11 +2936,17 @@
       renderList();
       renderUpcoming();
       renderGenRepLocations();
-      // opdater stille i baggrunden, hvis der er en forbindelseskode
+      // opdater stille i baggrunden, hvis der er en forbindelseskode - viser
+      // "henter nyeste..." mens det står på, så tallene ovenfor ikke ser
+      // forkerte ud, mens de bare stadig er den (evt. forældede) lokale
+      // udgave fra før denne hentning er færdig.
+      var connected = isOvSyncConnected();
+      if(connected) setOvSyncStatus("🔄 Henter nyeste...");
       var freshHistory = await window.__dlhRefreshHistory();
       if(freshHistory){ renderList(); renderGenRepLocations(); }
       var freshUpcoming = await window.__dlhRefreshUpcoming();
       if(freshUpcoming) renderUpcoming();
+      setOvSyncStatus(connected ? "✓ Opdateret " + nowClock() : "");
     };
 
     // I modsætning til selve rapporten (som synkroniserer sig selv hvert 20.
@@ -2925,10 +2958,13 @@
       if(!built) return;
       try {
         if(window.__dlhMigrateHistoryItemIds) window.__dlhMigrateHistoryItemIds();
+        var connected = isOvSyncConnected();
+        if(connected) setOvSyncStatus("🔄 Opdaterer...");
         var freshHistory = await window.__dlhRefreshHistory();
         if(freshHistory){ renderList(); renderGenRepLocations(); }
         var freshUpcoming = await window.__dlhRefreshUpcoming();
         if(freshUpcoming) renderUpcoming();
+        setOvSyncStatus(connected ? "✓ Opdateret " + nowClock() : "");
       } catch (e) {} // baggrunds-opdatering må aldrig kunne vise en fejl - prøver bare igen om 20 sek.
     }, 20000);
   })();
