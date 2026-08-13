@@ -1353,15 +1353,6 @@
       localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(history));
     }
 
-    // Nøgle for ét opgavepunkt: rigtige punkter har et id (se REPORT_HTML,
-    // ensureItemId/genItemId, samt __dlhMigrateHistoryItemIds som giver
-    // ældre punkter ét). Bruges af sletning (__dlhDeleteHistoryItem), hvor
-    // punktet på det tidspunkt altid allerede har fået et rigtigt id, fordi
-    // Opgaveoverblik migrerer FØR knapperne overhovedet vises.
-    function historyItemKey(it) {
-      return it.id || ("legacy:" + (it.emne || "") + "|" + (it.krav || "") + "|" + (it.ansvarlig || ""));
-    }
-
     // Lægger to udgaver af ÉN dags opgaveliste sammen ved at forene dem på
     // punkt-id: et punkt, der kun findes i den ene liste, bevares altid - det
     // er kun hvis SAMME punkt-id findes i begge lister, at der skal vælges
@@ -1571,11 +1562,14 @@
     // hvis en anden enhed, der endnu ikke har hørt om sletningen, lægger sin
     // (ældre) lokale kopi sammen med serverens igen (samme princip som andre
     // steder i appen, fx "kommende opgaver" og depotrum).
-    window.__dlhDeleteHistoryItem = async function (date, idx) {
+    window.__dlhDeleteHistoryItem = async function (date, itemId) {
+      if (!itemId) return;
       var history = loadHistoryLocal();
       var day = history.filter(function (d) { return d.date === date; })[0];
-      if (!day || !day.items || idx < 0 || idx >= day.items.length) return;
-      day.items[idx] = { id: historyItemKey(day.items[idx]), deleted: true };
+      if (!day || !day.items) return;
+      var idx = day.items.findIndex(function (it) { return it.id === itemId; });
+      if (idx === -1) return;
+      day.items[idx] = { id: itemId, deleted: true };
       day.savedAt = new Date().toISOString();
       saveHistoryLocal(history);
       if (syncCode) await pushHistory(history);
@@ -1644,10 +1638,13 @@
     // Ændrer status på ét enkelt punkt i historikken (bruges af Opgaveoverblikkets
     // "✓ Marker udført"-knap, så en "Afventer"-opgave kan lukkes uden at skulle
     // tilbage i selve rapport-formularen).
-    window.__dlhSetHistoryItemStatus = async function (date, idx, status) {
+    window.__dlhSetHistoryItemStatus = async function (date, itemId, status) {
+      if (!itemId) return;
       var history = loadHistoryLocal();
       var day = history.filter(function (d) { return d.date === date; })[0];
-      if (!day || !day.items || idx < 0 || idx >= day.items.length) return;
+      if (!day || !day.items) return;
+      var idx = day.items.findIndex(function (it) { return it.id === itemId; });
+      if (idx === -1) return;
       var now = new Date().toISOString();
       day.items[idx].status = status;
       // Stemples pr. punkt (ikke kun day.savedAt) - se mergeHistoryItems: det
@@ -2740,7 +2737,7 @@
           if(!requireOvPassword()) return;
           doneBtn.disabled = true;
           try {
-            await window.__dlhSetHistoryItemStatus(doneBtn.dataset.date, parseInt(doneBtn.dataset.idx, 10), "OK");
+            await window.__dlhSetHistoryItemStatus(doneBtn.dataset.date, doneBtn.dataset.id, "OK");
           } catch (e) {
           } finally {
             renderList();
@@ -2756,7 +2753,7 @@
           if(btn.dataset.upid){
             await window.__dlhDeleteUpcomingEntry(btn.dataset.upid);
           } else {
-            await window.__dlhDeleteHistoryItem(btn.dataset.date, parseInt(btn.dataset.idx, 10));
+            await window.__dlhDeleteHistoryItem(btn.dataset.date, btn.dataset.id);
           }
         } catch (e) {
         } finally {
@@ -2775,16 +2772,7 @@
 
       var byDate = {};
       history.forEach(function(day){
-        // _historyIdx husker punktets plads i den gemte historik, så vi ved
-        // præcis hvad der skal slettes, hvis man trykker "✕" på det. Sat FØR
-        // slettede punkter filtreres fra, så indekset stadig peger rigtigt
-        // ind i den gemte (rå) liste.
-        var items = (day.items || []).map(function(it, i){
-          var copy = {};
-          for(var k in it){ copy[k] = it[k]; }
-          copy._historyIdx = i;
-          return copy;
-        }).filter(function(it){ return !it.deleted; });
+        var items = (day.items || []).filter(function(it){ return !it.deleted; });
         byDate[day.date] = { date: day.date, montor: day.montor, items: items };
       });
       completedUpcoming.forEach(function(t){
@@ -2881,10 +2869,10 @@
         d.items.forEach(function(it){
           var delAttrs = it._upcomingId
             ? ' data-upid="' + esc(it._upcomingId) + '"'
-            : ' data-date="' + esc(d.day.date) + '" data-idx="' + it._historyIdx + '"';
+            : ' data-date="' + esc(d.day.date) + '" data-id="' + esc(it.id || "") + '"';
           // Kun rigtige historik-punkter (ikke fuldførte kommende opgaver, som
           // altid allerede er "Udført") kan skifte status direkte herfra.
-          var doneAttrs = ' data-date="' + esc(d.day.date) + '" data-idx="' + it._historyIdx + '"';
+          var doneAttrs = ' data-date="' + esc(d.day.date) + '" data-id="' + esc(it.id || "") + '"';
           html += '<div class="ov-task">' +
             '<div class="ov-task-top">' +
               '<div><div class="ov-task-title">' + esc(it.emne || "Uden titel") + '</div>' +
