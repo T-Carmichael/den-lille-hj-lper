@@ -104,11 +104,58 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     dels i `REPORT_HTML` (`touchItemCard` i det ydre script, kaldt fra
     `.toggle`-klik/`focusout`/`dlh-photo-saved`-lytterne i `reportFrame`'s
     `"load"`-event, lige før `autoLogToday()`), dels i
-    `__dlhSetHistoryItemStatus` (statusændring i Opgaveoverblik). Mangler
-    `updatedAt` på ét af punkterne (ældre data, eller tombstones fra
-    sletning/"Ryd dubletter", som bevidst ikke sætter det), falder
+    `__dlhSetHistoryItemStatus`/`__dlhDeleteHistoryItem`/
+    `__dlhRemoveDuplicateHistoryItems` (statusændring/sletning/oprydning i
+    Opgaveoverblik - tombstones fra sletning/"Ryd dubletter" sætter NU også
+    `updatedAt`, se nedenfor). Har KUN den ene side et `updatedAt`, vinder
+    DEN altid (en sporet, bevidst ændring skal ikke kunne overskrives af en
+    urørt, gammel kopi). Kun hvis INGEN af de to har `updatedAt`, falder
     sammenlægningen tilbage til den gamle opførsel (den side, der kaldes
-    "newer", vinder ubetinget).
+    "newer", vinder ubetinget) - det rammer kun punkter, der aldrig er rørt
+    af nogen af disse funktioner.
+    **Rettet igen (14/8) - opgaver, der "kom igen" efter gentagne
+    fuldførelser/sletninger:** to selvstændige fejl spillede sammen.
+    1) **Den egentlige hovedfejl**: `mergeHistoryItems` filtrerede
+    ubetinget alle tombstones (`deleted: true`) fra i det SAMMENLAGTE
+    resultat, den selv returnerede (`.filter(it => !it.deleted)` i
+    slutningen). Det betød, at en sletnings-tombstone ALDRIG nåede at
+    blive gemt varigt NOGET sted - end ikke lokalt på den enhed, der selv
+    lige slettede punktet - fordi `pushHistory`/`__dlhDeleteHistoryItem`
+    gemmer resultatet af netop denne sammenlægning tilbage igen. I
+    praksis forsvandt beviset for at et punkt var slettet, næsten med det
+    samme. Rettet ved at STOPPE med at filtrere tombstones væk i
+    `mergeHistoryItems` - de gemmes nu varigt, ligesom for kommende
+    opgaver/rum/optælling. Visnings-laget (Opgaveoverblik, `buildCombinedDays`
+    m.fl.) filtrerede allerede selv slettede punkter fra ved rendering, så
+    dette krævede ingen UI-ændring - kun 💾-backup-knappens optælling af
+    "opgaver ialt" manglede et tilsvarende filter, tilføjet samme omgang.
+    2) **En medvirkende, mere snigende fejl**: `touchItemCard` stempler et
+    punkt-korts `updatedAt` ved `focusout` - men et felt, der bare sidder
+    fokuseret UDEN reelt at blive redigeret (fx fordi man skifter
+    fane/app midt i, uden at nå at forlade feltet selv), mister først
+    fokus LÆNGE efter, når et HELT ANDET felt i formularen røres. Det
+    tidspunkt afspejler kun hvornår feltet mistede fokus, ikke hvornår det
+    reelt sidst havde meningsfuldt indhold - så et punkt kunne fremstå
+    "kunstigt friskt" og dermed vinde over en reelt nyere sletning/
+    fuldførelse fra en anden enhed, selv EFTER fejl 1 var rettet. Rettet
+    ved en ny funktion, `reconcileOpenReportWithHistory` (sync-IIFE'en):
+    fjerner proaktivt ethvert punkt fra den ÅBNE rapport-formular, som
+    frisk hentet historik siger er udført/slettet - kaldt (a) SYNKRONT,
+    FØR formularen overhovedet samles sammen i `__dlhLogToday` (så et
+    punkt aldrig når at blive gemt igen, selv i det snævre vindue mellem
+    en anden enheds sletning og denne enheds næste urelaterede gemning),
+    og (b) ved forbindelse/"Hent nyeste" samt nu også i den periodiske
+    20-sekunders baggrunds-poll (`startPolling`, som tidligere KUN
+    genhentede `report`, ikke historik). Ingen tidspunkts-sammenligning i
+    selve reconcile-funktionen - findes historikken en tombstone/"OK", vinder
+    den ubetinget (der findes ingen "genåbn en udført/slettet opgave"-
+    funktion i appen, så der er ingen legitim grund til det modsatte).
+    Desuden får tombstones fra sletning/"Ryd dubletter" nu deres eget
+    `updatedAt` (som status-ændringer allerede havde), og
+    `mergeHistoryItems` foretrækker et punkt MED `updatedAt` over et UDEN
+    - uanset behandlingsrækkefølge - i stedet for at lade den side, der
+    tilfældigvis blev tilføjet sidst, vinde ubetinget. Dette er et
+    ekstra sikkerhedslag oven på rettelse 1+2, ikke selve hovedrettelsen.
     Rettet fordi hele dagens `savedAt` tidligere blev brugt til at afgøre
     en vinder for ALLE punkter under ét: et statusskift i Opgaveoverblik
     kunne blive "fortrudt" af en efterfølgende, helt urelateret gemning

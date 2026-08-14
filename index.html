@@ -894,6 +894,7 @@
     history.forEach(function (day) {
       dateSet[day.date] = true;
       (day.items || []).forEach(function (it) {
+        if (it.deleted) return;
         total++;
         if (it.status === "OK") ok++;
         if (it.status === "AFV") afv++;
@@ -1137,6 +1138,49 @@
       } catch (e) {}
     }
 
+    // Fjerner ALLE punkter fra den ÅBNE rapport-formular, som historikken nu
+    // siger er udført/slettet - kaldes efter enhver frisk historik-hentning
+    // (forbindelse, "Hent nyeste", periodisk baggrunds-synk i startPolling,
+    // og FØR enhver automatisk gemning i __dlhLogToday).
+    //
+    // removeItemFromOpenReport ovenfor dækker kun, når ÆNDRINGEN sker på
+    // DENNE enhed. Den dækker IKKE, at et punkt kan sidde "glemt" i et
+    // tekstfelt her (fokuseret, men ikke rørt ved), mens en ANDEN enhed i
+    // mellemtiden fuldfører/sletter netop det punkt. Rører man SENERE et
+    // helt andet felt i formularen (fx tilføjer et nyt punkt), forlader det
+    // gamle felt fokus - og DET tidspunkt (ikke hvornår punktet reelt sidst
+    // havde meningsfuldt indhold) er hvad touchItemCard stempler det med,
+    // FØR denne funktion overhovedet når at køre. Et tidspunkts-sammenligning
+    // her ville derfor være vildledt af sin egen præmis (touchItemCard har
+    // allerede gjort punktet "kunstigt friskt"). Der findes ingen "genåbn
+    // udført/slettet opgave"-funktion i appen, så der er ingen legitim grund
+    // til at et punkt, historikken siger er væk, alligevel skal bevares her
+    // - historikkens (netop hentede) udsagn vinder ubetinget.
+    async function reconcileOpenReportWithHistory(history) {
+      try {
+        var openState = getReportState();
+        if (!openState || !openState.items || !openState.items.length) return;
+        var byId = {};
+        (history || []).forEach(function (day) {
+          (day.items || []).forEach(function (it) { if (it.id) byId[it.id] = it; });
+        });
+        var removedAny = false;
+        openState.items.forEach(function (it) {
+          if (!it.id) return;
+          var histIt = byId[it.id];
+          if (!histIt) return;
+          var isGone = histIt.deleted || histIt.status === "OK";
+          if (!isGone) return;
+          try {
+            if (reportFrame.contentWindow.__removeItemById && reportFrame.contentWindow.__removeItemById(it.id)) {
+              removedAny = true;
+            }
+          } catch (e) {}
+        });
+        if (removedAny) await pushState();
+      } catch (e) {}
+    }
+
     // pullInFlight/pushInFlight forhindrer at et "hent nyeste" (poll hvert
     // 20. sekund) og en afsendelse kan overlappe og løbe om kap - uden det
     // kan et "hent nyeste", der lander lige efter man har taget et billede
@@ -1267,6 +1311,12 @@
         var active = reportFrame.contentDocument && reportFrame.contentDocument.activeElement;
         var isTyping = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
         if (!isTyping) pullState(false);
+        // Historik (og dermed reconcileOpenReportWithHistory, se dér) hentes
+        // BEVIDST uden isTyping-værnet ovenfor: et felt, der bare sidder
+        // fokuseret uden reelt at blive redigeret (fx fordi brugeren skiftede
+        // fane/app midt i), skal ikke kunne blokere for at et punkt, der er
+        // udført/slettet på en ANDEN enhed, bliver fjernet herfra i baggrunden.
+        if (window.__dlhRefreshHistory) window.__dlhRefreshHistory();
       }, 20000);
     }
 
@@ -1422,14 +1472,19 @@
     // slettet, bare fordi en anden enhed gemte noget andet samme dato.
     //
     // Når begge udgaver af punktet har et EGET updatedAt (sat i REPORT_HTML
-    // ved status-skift/tekst-redigering/foto, og i __dlhSetHistoryItemStatus
-    // ved statusskift i Opgaveoverblik - se touchItemCard i reportFrame's
-    // "load"-lytter), bruges DET til at afgøre hvem der reelt sidst er rørt
-    // ved netop dette punkt. Ellers falder vi tilbage til den gamle
-    // opførsel (den side, der kaldes "newer", vinder ubetinget) - det
-    // dækker ældre punkter uden updatedAt, og tombstones fra sletning/
-    // dublet-oprydning (som bevidst ikke sætter updatedAt, så de stadig
-    // altid vinder).
+    // ved status-skift/tekst-redigering/foto, og i __dlhSetHistoryItemStatus/
+    // __dlhDeleteHistoryItem/__dlhRemoveDuplicateHistoryItems ved status-
+    // ændring/sletning/oprydning i Opgaveoverblik - se touchItemCard i
+    // reportFrame's "load"-lytter), bruges DET til at afgøre hvem der reelt
+    // sidst er rørt ved netop dette punkt. Har KUN den ene side et
+    // updatedAt, vinder DEN altid - en sporet, bevidst ændring (status/
+    // sletning) skal ikke kunne overskrives af en urørt, gammel kopi, der
+    // bare tilfældigvis ligger i en dag med et nyere day.savedAt (fx fordi
+    // et helt andet punkt i samme åbne rapport-formular blev redigeret).
+    // Kun hvis INGEN af de to har updatedAt, falder vi tilbage til den
+    // gamle opførsel (den side, der kaldes "newer", vinder ubetinget) - det
+    // dækker udelukkende punkter, der aldrig er rørt af nogen af de to
+    // rettelser nedenfor.
     //
     // FØR denne rettelse blev hele dagens seneste savedAt brugt til at
     // afgøre en vinder for ALLE punkter på én gang - så en status sat i
@@ -1460,13 +1515,33 @@
         var existing = map[key];
         if (it.updatedAt && existing.updatedAt) {
           if (new Date(it.updatedAt) >= new Date(existing.updatedAt)) map[key] = it;
+        } else if (it.updatedAt && !existing.updatedAt) {
+          // it er en SPORET ændring (status/sletning), existing er bare en
+          // urørt/gammel kopi uden eget tidsstempel - den sporede ændring
+          // vinder altid, uanset behandlingsrækkefølge.
+          map[key] = it;
+        } else if (!it.updatedAt && existing.updatedAt) {
+          // eksisterende er den sporede ændring - behold den, selvom "it"
+          // ellers ville vinde ved at være den, der behandles sidst.
         } else {
+          // ingen af dem er sporet - gammel opførsel (den der behandles
+          // sidst vinder ubetinget, dvs. hele dagens savedAt afgør).
           map[key] = it;
         }
       }
       (itemsOlder || []).forEach(add);
       (itemsNewer || []).forEach(add);
-      return order.map(function (k) { return map[k]; }).filter(function (it) { return !it.deleted; });
+      // Tombstones ("deleted: true") beholdes bevidst i det sammenlagte
+      // resultat - de bliver IKKE filtreret væk her. Visnings-laget
+      // (Opgaveoverblik) filtrerer selv slettede punkter fra ved rendering
+      // (samme princip som "kommende opgaver"/rum/optælling). Blev de
+      // filtreret væk HER, ville selve tombstonen aldrig nå at blive gemt
+      // NOGET sted - heller ikke på den enhed, der selv lige slettede
+      // punktet - og sletningen ville derfor ikke bestå: en hvilken som
+      // helst enhed med en gammel, urørt kopi af punktet liggende (fx i en
+      // åben rapport-formular) kunne "genoplive" det ved næste gemning,
+      // fordi der intet var tilbage, der sagde "dette er slettet".
+      return order.map(function (k) { return map[k]; });
     }
 
     // Slår to historik-lister sammen: hver dato bevares fra begge sider, og
@@ -1556,6 +1631,28 @@
 
     // Gemmer dagens (eller den valgte dato's) opgaver fra rapport-formularen ind i overblikket
     window.__dlhLogToday = async function () {
+      // FØR formularens tilstand overhovedet samles sammen: er vi
+      // forbundet, så hent den nyeste historik og fjern ethvert punkt
+      // herfra, som ALLEREDE er udført/slettet et andet sted (se
+      // reconcileOpenReportWithHistory). Uden dette kunne et punkt, der
+      // bare sad upåagtet i et fokuseret felt (fx fordi man skiftede
+      // fane/app midt i redigeringen, uden at nå at forlade feltet),
+      // "genopstå" med et FRISKT tidspunkt, blot fordi et HELT andet felt
+      // i formularen blev rørt senere (det tidspunkt afspejler kun hvornår
+      // feltet mistede fokus, ikke hvornår det reelt sidst blev redigeret) -
+      // og det friske tidspunkt kunne så slå en anden enheds reelt nyere
+      // fuldførelse/sletning ved sammenlægning. Fejler hentningen (fx
+      // offline), fortsættes som hidtil uden denne ekstra beskyttelse -
+      // selve gemningen må aldrig kunne blokeres af dette.
+      if (syncCode) {
+        try {
+          var freshRemote = await pullHistoryRemote();
+          if (freshRemote !== null) {
+            var freshMerged = mergeHistory(migrateHistoryList(loadHistoryLocal()), migrateHistoryList(freshRemote));
+            await reconcileOpenReportWithHistory(freshMerged);
+          }
+        } catch (e) {}
+      }
       var state = getReportState();
       if (!state) return { ok: false };
       var date = (state.meta && state.meta.dato) || new Date().toISOString().slice(0, 10);
@@ -1612,6 +1709,7 @@
         var merged = mergeHistory(local, migrateHistoryList(remote));
         saveHistoryLocal(merged);
         await pushHistory(merged);
+        await reconcileOpenReportWithHistory(merged);
         return merged;
       } catch (e) {
         return local; // opdatering fejlede uventet - rør ikke ved de lokale data, prøv igen senere
@@ -1631,8 +1729,13 @@
       if (!day || !day.items) return;
       var idx = day.items.findIndex(function (it) { return it.id === itemId; });
       if (idx === -1) return;
-      day.items[idx] = { id: itemId, deleted: true };
-      day.savedAt = new Date().toISOString();
+      var now = new Date().toISOString();
+      // Tombstonen får sit EGET updatedAt (se mergeHistoryItems) - ellers
+      // kunne en urørt, gammel kopi af punktet (fx stadig liggende i en
+      // andens åbne rapport-formular, genlogget ved en helt urelateret
+      // gemning) overskrive sletningen igen ved næste synkronisering.
+      day.items[idx] = { id: itemId, deleted: true, updatedAt: now };
+      day.savedAt = now;
       saveHistoryLocal(history);
       if (syncCode) await pushHistory(history);
       await removeItemFromOpenReport(itemId);
@@ -1666,6 +1769,7 @@
       var history = loadHistoryLocal();
       var statusRank = { OK: 2, AFV: 1, "": 0 };
       var removed = 0;
+      var now = new Date().toISOString();
       history.forEach(function (day) {
         var groups = {};
         (day.items || []).forEach(function (it, idx) {
@@ -1686,12 +1790,15 @@
           });
           idxs.forEach(function (idx) {
             if (idx === bestIdx) return;
-            day.items[idx] = { id: day.items[idx].id, deleted: true };
+            // Samme begrundelse som __dlhDeleteHistoryItem: tombstonen skal
+            // have sit eget updatedAt, ellers kan en urørt, gammel kopi
+            // overskrive oprydningen igen ved næste synkronisering.
+            day.items[idx] = { id: day.items[idx].id, deleted: true, updatedAt: now };
             removed++;
             dayChanged = true;
           });
         });
-        if (dayChanged) day.savedAt = new Date().toISOString();
+        if (dayChanged) day.savedAt = now;
       });
       saveHistoryLocal(history);
       if (syncCode) await pushHistory(history);
