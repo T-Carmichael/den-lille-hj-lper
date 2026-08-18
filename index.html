@@ -3070,7 +3070,7 @@
               (it.krav ? '<div class="ov-task-desc">' + esc(it.krav) + '</div>' : '') + '</div>' +
               '<div class="ov-task-actions">' +
                 '<span class="ov-pill ' + statusClass(it.status) + '">' + statusLabel(it.status) + '</span>' +
-                (it.status === "AFV" && !it._upcomingId
+                (it.status !== "OK" && !it._upcomingId
                   ? '<button class="ov-task-done" type="button"' + doneAttrs + ' title="Marker udført">✓ Udført</button>'
                   : '') +
                 '<button class="ov-task-delete" type="button"' + delAttrs + ' title="Slet opgave">✕</button>' +

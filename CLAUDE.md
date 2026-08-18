@@ -168,6 +168,13 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     titel/beskrivelse/ansvarlig på samme dato (typisk rester fra før
     id-migreringen), beholder den bedste status, fjerner resten som
     tombstones.
+  - **"✓ Udført"-knappen i Opgaveoverblik vises for alt, der ikke allerede
+    er "Udført"** — altså både "Afventer" OG "Ikke udfyldt" (`it.status
+    !== "OK"` i `renderList`, ikke længere kun `it.status === "AFV"`).
+    Før dette kunne "Ikke udfyldt"-opgaver (fx et punkt hvor kun
+    beskrivelsen blev udfyldt, men aldrig en status) kun slettes fra
+    Opgaveoverblik, ikke markeres udført — man skulle ind i Rapport-fanen
+    og finde punktet der for at ændre status.
   - **Punkter der stadig "Afventer" på tværs af flere datoer vises kun
     med den nyeste** (`buildCombinedDays` i Opgaveoverblik-IIFE'en,
     matchet på punkt-id). Rapport-formularen rydder bevidst kun
