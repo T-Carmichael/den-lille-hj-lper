@@ -303,6 +303,34 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   - Der har tidligere også ligget en simplere "Depotrum – inventar"-liste
     (vare/antal/lav-lager-advarsel) inde i Opgaveoverblik-fanen — den er
     fjernet igen, da Optælling-fanen dækker behovet.
+- **Faste opgaver-fane** (fjerde fane): et simpelt, selvstændigt ugentligt
+  overblik over faste, tilbagevendende opgaver og hvem af de 4-5
+  medarbejdere der er ansvarlig lige nu — grupperet under de 7 ugedage
+  (mandag-søndag, altid alle 7 vist, også tomme). **Bevidst IKKE koblet
+  til Rapport eller Opgaveoverblik** — hverken data eller UI deler noget
+  med dem, kun et separat overblik ("hvem gør hvad hvornår" på ugebasis,
+  ikke en logget historik af udførte opgaver).
+  - **Medarbejdernavn er et frit tekstfelt** (`ansvarlig`), ikke en
+    dropdown — samme princip som "Ansvarlig" i selve rapporten. Titel og
+    ansvarlig er begge direkte redigerbare tekstfelter i listen og gemmes
+    automatisk ved `focusout` (samme "ingen Gem-knap"-princip som resten
+    af appen), så en opgave nemt kan gives videre til en anden medarbejder.
+  - **Data og sync følger nøjagtig samme mønster som depotrum/optælling**
+    (`window.__dlhAddFasteOpgave`/`__dlhUpdateFasteOpgave`/
+    `__dlhDeleteFasteOpgave`, `localStorage`-nøgle `dlh-faste-opgaver`,
+    synk-nøgle `faste`): sletning er en tombstone (`deleted:true`), enhver
+    ændring henter først den friskeste udgave fra den delte kode
+    (`freshFaste`) og lægger sammen (`mergeById`, samme generiske
+    funktion som rum/optælling bruger) FØR ændringen skrives, og selve
+    gemningen går gennem `safeMergePush` (ETag-beskyttet, retter
+    automatisk konflikter). Ingen ændringer nødvendige i
+    `netlify/edge-functions/sync.js` — den er allerede fuldstændig
+    generisk pr. `<kode>/<nøgle>`.
+  - Opdaterer sig kun ved fane-skift (`window.__dlhRenderFaste`), ikke en
+    løbende baggrunds-poll hvert 20. sekund — samme (simplere) mønster som
+    Optælling-fanen, ikke Rapport/Opgaveoverblik.
+  - Talt med i 💾 Backup-knappen og 📥 Gendan-knappen (`backup.faste`,
+    samme sammenlægningsprincip som resten af backup-funktionen).
 - **Del/installér**: Web Share API + download-fallback, samt en indlejret
   web app manifest (data-URI) til "Installér som app".
 - **Backup (💾) / Gendan (📥)-knapper** øverst i appen (ved siden af

@@ -726,6 +726,108 @@
     cursor:pointer;
     color:var(--sub);
   }
+
+  /* ---------- Faste opgaver-fane ---------- */
+  .faste-intro{margin-bottom:14px;}
+  .faste-title{font-family:"Sora",sans-serif;font-weight:700;font-size:15.5px;margin-bottom:4px;}
+  .faste-hint{font-size:12px;color:var(--sub);margin:0;}
+  .faste-add{
+    background:var(--glass);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:14px;
+    margin-bottom:18px;
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .faste-add select,.faste-add input{
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:8px 11px;
+    color:var(--ink);
+    font-size:13px;
+  }
+  .faste-add input::placeholder{color:var(--sub);}
+  .faste-add select{flex:0 0 120px;}
+  .faste-add input[type="text"]{flex:1 1 130px;}
+  .faste-add button{
+    background:var(--amber-soft);
+    border:1px solid rgba(255,200,87,0.5);
+    color:var(--ink);
+    font-size:12.5px;font-weight:700;
+    padding:8px 14px;
+    border-radius:10px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .faste-day{margin-bottom:16px;}
+  .faste-day-head{
+    font-family:"Sora",sans-serif;
+    font-weight:700;
+    font-size:13.5px;
+    margin-bottom:7px;
+    padding-bottom:5px;
+    border-bottom:1px solid var(--line);
+  }
+  .faste-task{
+    background:var(--glass);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:11px 14px;
+    margin-bottom:7px;
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .faste-task-body{flex:1;min-width:0;}
+  .faste-task-title{
+    font-size:14px;
+    font-weight:600;
+    background:none;
+    border:none;
+    color:var(--ink);
+    width:100%;
+    padding:2px 0;
+  }
+  .faste-task-note{
+    font-size:12.5px;
+    color:var(--sub);
+    background:none;
+    border:none;
+    width:100%;
+    padding:2px 0;
+    margin-top:2px;
+  }
+  .faste-task-ansvarlig{
+    font-size:12px;
+    font-weight:600;
+    color:var(--amber);
+    background:none;
+    border:none;
+    padding:2px 0;
+    margin-top:2px;
+    width:100%;
+  }
+  .faste-task-ansvarlig::placeholder,.faste-task-note::placeholder{color:var(--sub);font-weight:400;}
+  .faste-task-actions{flex:0 0 auto;}
+  .faste-task-delete{
+    background:none;
+    border:1px solid var(--line);
+    border-radius:8px;
+    width:26px;height:26px;
+    font-size:12px;
+    cursor:pointer;
+    color:var(--sub);
+  }
+  .faste-task-delete:hover{color:#FF8F70;border-color:rgba(255,143,112,0.5);}
+  .faste-empty{
+    font-size:12.5px;
+    color:var(--sub);
+    padding:8px 0;
+  }
 </style>
 </head>
 <body>
@@ -767,6 +869,7 @@
         <button class="tab-btn active" data-panel="rapport">📋 Rapport</button>
         <button class="tab-btn" data-panel="overview">🗂️ Opgaveoverblik</button>
         <button class="tab-btn" data-panel="counting">📦 Optælling</button>
+        <button class="tab-btn" data-panel="faste">📅 Faste opgaver</button>
       </div>
     </div>
   </div>
@@ -802,6 +905,8 @@
     <div class="panel" id="panel-overview" data-mode="overview"></div>
 
     <div class="panel" id="panel-counting" data-mode="counting"></div>
+
+    <div class="panel" id="panel-faste" data-mode="faste"></div>
   </div>
 
 <script>
@@ -820,6 +925,9 @@
     }
     if(target === "counting" && typeof window.__dlhRenderCounting === "function"){
       window.__dlhRenderCounting();
+    }
+    if(target === "faste" && typeof window.__dlhRenderFaste === "function"){
+      window.__dlhRenderFaste();
     }
   });
 
@@ -887,6 +995,7 @@
     var upcoming = readJSON("dlh-upcoming-tasks");
     var rooms = readJSON("dlh-depot-rooms");
     var count = readJSON("dlh-depot-count");
+    var faste = readJSON("dlh-faste-opgaver");
     var syncCode = localStorage.getItem("dlh-sync-code") || "";
 
     var dateSet = {};
@@ -911,7 +1020,8 @@
       "Historik: " + Object.keys(dateSet).length + " dage logget, " + total + " opgaver ialt (" + ok + " udført, " + afv + " afventer)\n" +
       "Kommende opgaver (ikke fuldførte): " + upcoming.filter(function (t) { return !t.deleted; }).length + "\n" +
       "Depotrum: " + rooms.filter(function (r) { return !r.deleted; }).length + " rum, " +
-      count.filter(function (t) { return !t.deleted; }).length + " ting talt op";
+      count.filter(function (t) { return !t.deleted; }).length + " ting talt op\n" +
+      "Faste opgaver: " + faste.filter(function (t) { return !t.deleted; }).length;
 
     alert(summary);
 
@@ -921,7 +1031,8 @@
       history: history,
       upcoming: upcoming,
       rooms: rooms,
-      count: count
+      count: count,
+      faste: faste
     };
     var json = JSON.stringify(backup, null, 2);
     var filename = "den-lille-hjaelper-backup-" + new Date().toISOString().slice(0, 10) + ".json";
@@ -965,7 +1076,7 @@
     try {
       var text = await file.text();
       var backup = JSON.parse(text);
-      if (!backup || (!backup.history && !backup.upcoming && !backup.rooms && !backup.count)) {
+      if (!backup || (!backup.history && !backup.upcoming && !backup.rooms && !backup.count && !backup.faste)) {
         alert("Denne fil ligner ikke en gyldig backup-fil fra appen.");
         return;
       }
@@ -975,7 +1086,8 @@
         "Historik: " + (result.history !== undefined ? result.history + " dage ialt" : "ikke ændret") + "\n" +
         "Kommende opgaver: " + (result.upcoming !== undefined ? result.upcoming + " ialt" : "ikke ændret") + "\n" +
         "Depotrum: " + (result.rooms !== undefined ? result.rooms + " rum" : "ikke ændret") + "\n" +
-        "Optælling: " + (result.count !== undefined ? result.count + " ting" : "ikke ændret") + "\n\n" +
+        "Optælling: " + (result.count !== undefined ? result.count + " ting" : "ikke ændret") + "\n" +
+        "Faste opgaver: " + (result.faste !== undefined ? result.faste + " ialt" : "ikke ændret") + "\n\n" +
         "Åbn Opgaveoverblik for at se det samlede resultat."
       );
     } catch (err) {
@@ -2220,6 +2332,105 @@
       await pushCount(updated);
     };
 
+    // ---------- faste ugentlige opgaver (til Faste opgaver-fanen) ----------
+    // Et simpelt, selvstændigt ugeoverblik over faste opgaver og hvem der er
+    // ansvarlig - ikke koblet til Rapport/Opgaveoverblik. Samme
+    // sikre synkroniseringsmønster som depotrum/optælling ovenfor (tombstone
+    // ved sletning, hent-friskeste-før-skriv, mergeById).
+    var LS_FASTE_KEY = "dlh-faste-opgaver";
+
+    function loadFasteLocal() {
+      try { return JSON.parse(localStorage.getItem(LS_FASTE_KEY) || "[]"); }
+      catch (e) { return []; }
+    }
+    function saveFasteLocal(list) {
+      localStorage.setItem(LS_FASTE_KEY, JSON.stringify(list));
+    }
+    async function pushFaste(list) {
+      if (!syncCode) return;
+      try {
+        var merged = await safeMergePush("faste", list, mergeById);
+        saveFasteLocal(merged);
+      } catch (e) {}
+    }
+    async function pullFasteRemote() {
+      if (!syncCode) return null;
+      try {
+        var res = await fetch(SYNC_API + "/" + syncCode + "/faste");
+        if (res.status === 404) return [];
+        if (!res.ok) return null;
+        return await res.json();
+      } catch (e) { return null; }
+    }
+    async function freshFaste() {
+      var local = loadFasteLocal();
+      try {
+        if (!syncCode) return local;
+        var remote = await pullFasteRemote();
+        if (remote === null) return local;
+        var merged = mergeById(local, remote);
+        saveFasteLocal(merged);
+        return merged;
+      } catch (e) {
+        return local;
+      }
+    }
+
+    window.__dlhGetFasteOpgaver = function () {
+      return loadFasteLocal()
+        .filter(function (t) { return !t.deleted; })
+        .sort(function (x, y) { return (x.createdAt || "").localeCompare(y.createdAt || ""); });
+    };
+
+    window.__dlhAddFasteOpgave = async function (weekday, title, ansvarlig, note) {
+      var now = new Date().toISOString();
+      var entry = {
+        id: "f" + Date.now() + Math.random().toString(36).slice(2, 8),
+        weekday: weekday, title: title, ansvarlig: ansvarlig || "", note: note || "",
+        createdAt: now, updatedAt: now, deleted: false
+      };
+      var list = (await freshFaste()).concat([entry]);
+      saveFasteLocal(list);
+      await pushFaste(list);
+      return entry;
+    };
+
+    // Bruges til at rette titel/ansvarlig/note på et allerede oprettet punkt
+    // (fx når opgaven skal gå videre til en anden af de 4-5 medarbejdere).
+    window.__dlhUpdateFasteOpgave = async function (id, fields) {
+      var list = (await freshFaste()).map(function (t) {
+        if (t.id !== id) return t;
+        return {
+          id: t.id,
+          weekday: fields.weekday !== undefined ? fields.weekday : t.weekday,
+          title: fields.title !== undefined ? fields.title : t.title,
+          ansvarlig: fields.ansvarlig !== undefined ? fields.ansvarlig : t.ansvarlig,
+          note: fields.note !== undefined ? fields.note : t.note,
+          createdAt: t.createdAt,
+          deleted: false,
+          updatedAt: new Date().toISOString()
+        };
+      });
+      saveFasteLocal(list);
+      await pushFaste(list);
+    };
+
+    window.__dlhDeleteFasteOpgave = async function (id) {
+      var now = new Date().toISOString();
+      var list = (await freshFaste()).map(function (t) {
+        if (t.id !== id) return t;
+        return { id: t.id, deleted: true, updatedAt: now };
+      });
+      saveFasteLocal(list);
+      await pushFaste(list);
+    };
+
+    window.__dlhRefreshFaste = async function () {
+      var merged = await freshFaste();
+      try { await pushFaste(merged); } catch (e) {}
+      return merged;
+    };
+
     // Lægger en tidligere eksporteret backup-fil (se backup-knappen) sammen
     // med det, der allerede ligger lokalt/centralt - via de samme
     // sammenlægningsfunktioner som resten af appen bruger, så intet
@@ -2249,6 +2460,12 @@
         saveCountLocal(mergedCount);
         if (syncCode) await pushCount(mergedCount);
         result.count = mergedCount.length;
+      }
+      if (backup.faste) {
+        var mergedFaste = mergeById(loadFasteLocal(), backup.faste);
+        saveFasteLocal(mergedFaste);
+        if (syncCode) await pushFaste(mergedFaste);
+        result.faste = mergedFaste.length;
       }
       return result;
     };
@@ -2633,6 +2850,143 @@
       await window.__dlhRefreshRooms();
       await window.__dlhRefreshCount();
       renderAll();
+    };
+  })();
+
+  // ---------- Faste opgaver-panel (ugentligt overblik pr. ugedag) ----------
+  // Simpel, selvstændig liste over faste, daglige opgaver og hvem der er
+  // ansvarlig blandt de 4-5 medarbejdere - IKKE koblet til Rapport eller
+  // Opgaveoverblik (bevidst valg, se CLAUDE.md). Medarbejdernavn er et frit
+  // tekstfelt, ligesom "Ansvarlig" andre steder i appen.
+  (function(){
+    var panel = document.getElementById("panel-faste");
+    var built = false;
+    var WEEKDAY_LABELS = {
+      mandag: "Mandag", tirsdag: "Tirsdag", onsdag: "Onsdag", torsdag: "Torsdag",
+      fredag: "Fredag", lørdag: "Lørdag", søndag: "Søndag"
+    };
+    var WEEKDAY_ORDER = ["mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag"];
+
+    function esc(s){
+      var d = document.createElement("div");
+      d.textContent = s == null ? "" : String(s);
+      return d.innerHTML;
+    }
+
+    function skeleton(){
+      var dayOptions = WEEKDAY_ORDER.map(function(d){
+        return '<option value="' + d + '">' + WEEKDAY_LABELS[d] + '</option>';
+      }).join("");
+      panel.innerHTML =
+        '<div class="ov-wrap">' +
+          '<div class="faste-intro">' +
+            '<div class="faste-title">📅 Faste ugentlige opgaver</div>' +
+            '<p class="faste-hint">Faste opgaver, der går igen hver uge, og hvem der er ansvarlig lige nu. Ikke koblet til Rapport eller Opgaveoverblik - kun et overblik.</p>' +
+          '</div>' +
+          '<div class="faste-add">' +
+            '<select id="faste-day"></select>' +
+            '<input type="text" id="faste-title" placeholder="Hvad skal laves?">' +
+            '<input type="text" id="faste-ansvarlig" placeholder="Hvem er ansvarlig?">' +
+            '<button id="faste-add-btn" type="button">+ Tilføj</button>' +
+          '</div>' +
+          '<div id="faste-list"></div>' +
+        '</div>';
+      document.getElementById("faste-day").innerHTML = dayOptions;
+
+      document.getElementById("faste-add-btn").addEventListener("click", addFasteFromForm);
+      document.getElementById("faste-title").addEventListener("keydown", function(e){
+        if(e.key === "Enter") addFasteFromForm();
+      });
+      document.getElementById("faste-ansvarlig").addEventListener("keydown", function(e){
+        if(e.key === "Enter") addFasteFromForm();
+      });
+
+      document.getElementById("faste-list").addEventListener("click", async function(e){
+        var btn = e.target.closest("[data-faste-delete]");
+        if(!btn) return;
+        if(!confirm("Slet denne faste opgave?")) return;
+        btn.disabled = true;
+        try {
+          await window.__dlhDeleteFasteOpgave(btn.dataset.id);
+        } finally {
+          renderList();
+        }
+      });
+
+      // Ret titel/ansvarlig/note direkte i listen - gemmes automatisk, når
+      // feltet forlades (samme "ingen Gem-knap"-princip som resten af appen).
+      document.getElementById("faste-list").addEventListener("focusout", async function(e){
+        var el = e.target;
+        var field = el.dataset.fasteField;
+        if(!field) return;
+        var id = el.dataset.id;
+        var fields = {};
+        fields[field] = el.value;
+        try { await window.__dlhUpdateFasteOpgave(id, fields); } catch(err){}
+      });
+    }
+
+    async function addFasteFromForm(){
+      var dayEl = document.getElementById("faste-day");
+      var titleEl = document.getElementById("faste-title");
+      var ansvEl = document.getElementById("faste-ansvarlig");
+      var title = titleEl.value.trim();
+      if(!title){ titleEl.focus(); return; }
+      var btn = document.getElementById("faste-add-btn");
+      btn.disabled = true;
+      try {
+        await window.__dlhAddFasteOpgave(dayEl.value, title, ansvEl.value.trim(), "");
+        titleEl.value = "";
+        ansvEl.value = "";
+        titleEl.focus();
+      } finally {
+        btn.disabled = false;
+        renderList();
+      }
+    }
+
+    function taskRowHtml(t){
+      return '<div class="faste-task">' +
+        '<div class="faste-task-body">' +
+          '<input class="faste-task-title" type="text" value="' + esc(t.title) + '" data-faste-field="title" data-id="' + esc(t.id) + '" placeholder="Opgave">' +
+          '<input class="faste-task-ansvarlig" type="text" value="' + esc(t.ansvarlig) + '" data-faste-field="ansvarlig" data-id="' + esc(t.id) + '" placeholder="Ansvarlig">' +
+        '</div>' +
+        '<div class="faste-task-actions">' +
+          '<button class="faste-task-delete" type="button" data-faste-delete data-id="' + esc(t.id) + '" title="Slet">✕</button>' +
+        '</div>' +
+      '</div>';
+    }
+
+    function renderList(){
+      var listEl = document.getElementById("faste-list");
+      if(!listEl) return;
+      var tasks = window.__dlhGetFasteOpgaver ? window.__dlhGetFasteOpgaver() : [];
+      var byDay = {};
+      tasks.forEach(function(t){
+        var day = WEEKDAY_LABELS[t.weekday] ? t.weekday : "mandag";
+        if(!byDay[day]) byDay[day] = [];
+        byDay[day].push(t);
+      });
+      var html = WEEKDAY_ORDER.map(function(day){
+        var dayTasks = byDay[day] || [];
+        return '<div class="faste-day">' +
+          '<div class="faste-day-head">' + WEEKDAY_LABELS[day] + '</div>' +
+          (dayTasks.length
+            ? dayTasks.map(taskRowHtml).join("")
+            : '<div class="faste-empty">Ingen faste opgaver endnu.</div>') +
+        '</div>';
+      }).join("");
+      listEl.innerHTML = html;
+    }
+
+    window.__dlhRenderFaste = async function(){
+      if(!built){
+        skeleton();
+        built = true;
+      }
+      renderList();
+      await window.__dlhRefreshFaste();
+      renderList();
     };
   })();
 
