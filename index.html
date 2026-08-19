@@ -1288,6 +1288,22 @@
         setReportState(data);
         reportEtag = remote.etag || reportEtag;
         knownServerReportSavedAt = data && data.savedAt ? data.savedAt : knownServerReportSavedAt;
+        // En hentet rapport-udgave kan indeholde punkter, der allerede står
+        // som "Udført" - almindelig gemning rydder altid Udført-punkter FØR
+        // de sendes op (se __dlhLogToday/__clearCompletedItems), men en
+        // hentning her går udenom det og gengiver formularen præcis som
+        // dataen siger. Uden dette blev sådanne opgaver siddende fast i
+        // Rapport-fanen på ubestemt tid (ventede man/skiftede fane, ændrede
+        // det ingenting, da intet andet trigger'ede en oprydning). Rydder op
+        // igen her, og sender den ryddede udgave op, så den ikke bare kommer
+        // igen ved næste hentning (på denne eller en anden enhed).
+        try {
+          if (reportFrame.contentDocument.querySelector('.item-card[data-status="OK"]') &&
+              reportFrame.contentWindow.__clearCompletedItems) {
+            reportFrame.contentWindow.__clearCompletedItems();
+            schedulePush();
+          }
+        } catch (e) {}
         setStatus("Forbundet · opdateret " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }));
       } catch (e) {
         if (showStatus) setStatus("Forbundet · kunne ikke hente (tjek internet)");

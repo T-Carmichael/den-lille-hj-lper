@@ -248,6 +248,22 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     bredere, ovenstående problem med samtidig redigering af samme felt -
     kun det specifikke "en hel, forældet formular-udgave overskriver en
     nyere" scenarie.
+  - **`pullState()` rydder nu også selv "Udført"-punkter væk fra den
+    hentede rapport-udgave**, ligesom en almindelig gemning altid gør
+    (`__clearCompletedItems`), og sender den ryddede udgave op igen bagefter.
+    Uden dette blev en opgave, der er markeret "Udført" i den DATA, der lige
+    hentes ned fra serveren, siddende fast i Rapport-fanen på ubestemt tid
+    - `deserializeState()` (kaldt af `pullState`) genopbygger blot
+    formularen præcis som den hentede data siger, uden selv at rydde op, og
+    intet andet trigger'ede en oprydning bagefter (hverken at vente eller
+    skifte fane hjalp - kun en ny redigering af selve punktet ville have
+    gjort det). Ramt i praksis, formodentlig fra et kapløb mellem flere
+    samtidige enheder (`report`-nøglen er stadig ikke fuldt sammenlagt, se
+    ovenfor), hvor en ikke-helt-ryddet udgave nåede at blive gemt på
+    serveren. Rører KUN selve `pullState()` (den løbende synkronisering) -
+    IKKE `openGeneratedReport()`s brug af samme `__setReportState`/
+    `deserializeState` til at vise en allerede gemt, historisk rapport (der
+    skal jo netop vise de udførte punkter, ikke rydde dem væk).
   - **Versionsmærket sendes som egne header-navne, ikke "rigtige" HTTP
     ETag/If-Match** (`X-Dlh-Version`/`X-Dlh-If-Version`). Første udgave
     brugte ETag/If-Match, men det gjorde at gem-kald konsekvent troede,
