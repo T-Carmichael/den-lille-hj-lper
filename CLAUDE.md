@@ -185,6 +185,18 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     visnings-/tællings-lag (ligesom "Ryd dubletter", bare på tværs af
     datoer i stedet for inden for én dato) - rører ikke selve den
     gemte historik, kræver derfor ikke adgangskoden.
+    - **Et punkt-id, der optræder som "Udført" NOGEN steder, viser aldrig
+      også en Afventer/blank-udgave af sig selv fra en tidligere dato**
+      (`hasOkVersion` i `buildCombinedDays`). Uden dette blev den GAMLE
+      "Afventer"-dag-post ved med at blive vist som sin egen række,
+      selvom punktet siden er blevet færdiggjort på en senere dato (siden
+      "Afventer"-punkter bevidst bliver stående i formularen dag til dag,
+      indtil de udføres) - så det samme punkt kunne se ud som om det
+      optrådte TO gange i Opgaveoverblik, én gang "Afventer" (den ældre,
+      nu forældede post) og én gang "Udført" (den nye) - og stødte man på
+      den ældre post først, så det ud som om opgaven "faldt tilbage" til
+      Afventer, selvom den reelt var korrekt markeret udført. Rent
+      visnings-lag, som resten af denne mekanisme.
   - **"📄 Generér rapport"**: se under Rapport-fanen ovenfor.
   - Sletning bruger "tombstones" (`{id, deleted:true}`) ligesom resten af
     appen - se afsnittet om enheds-sync nedenfor.

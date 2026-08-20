@@ -3395,18 +3395,37 @@
       function nonOkKey(it){
         return it.id || ("legacy:" + (it.emne || "") + "|" + (it.krav || "") + "|" + (it.ansvarlig || ""));
       }
+      // Et punkt, der har ligget som "Afventer" på en tidligere dato, og som
+      // SIDEN er blevet markeret "Udført" (på en senere dato, da "Afventer"-
+      // punkter jo bevidst bliver stående i formularen indtil da), skal ikke
+      // ALSO blive ved med at vise den gamle "Afventer"-udgave som en
+      // selvstændig række her - de to datoer er reelt samme punkt, bare på
+      // forskellige tidspunkter i dets levetid. Uden dette kunne en netop
+      // fuldført opgave se ud som om den "faldt tilbage" til Afventer, hvis
+      // man i overblikket støder på den ældre (nu forældede) Afventer-række
+      // først. Et punkt-id, der optræder som "Udført" NOGEN steder, får
+      // derfor ALDRIG vist en Afventer/blank-udgave af sig selv - uanset dato.
+      var hasOkVersion = {};
+      Object.keys(byDate).forEach(function(d){
+        byDate[d].items.forEach(function(it){
+          if(it.status === "OK") hasOkVersion[nonOkKey(it)] = true;
+        });
+      });
       var latestNonOkDate = {};
       Object.keys(byDate).forEach(function(d){
         byDate[d].items.forEach(function(it){
           if(it.status === "OK") return;
           var key = nonOkKey(it);
+          if(hasOkVersion[key]) return;
           if(!latestNonOkDate[key] || d > latestNonOkDate[key]) latestNonOkDate[key] = d;
         });
       });
       Object.keys(byDate).forEach(function(d){
         byDate[d].items = byDate[d].items.filter(function(it){
           if(it.status === "OK") return true;
-          return latestNonOkDate[nonOkKey(it)] === d;
+          var key = nonOkKey(it);
+          if(hasOkVersion[key]) return false;
+          return latestNonOkDate[key] === d;
         });
       });
 
