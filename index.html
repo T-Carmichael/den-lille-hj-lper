@@ -2728,8 +2728,21 @@
         if(e.target.id === "cnt-photo-input"){
           var file = e.target.files && e.target.files[0];
           if(!file) return;
+          // Skalering af et rigtigt kamerabillede (ofte flere MB, før det
+          // skaleres ned) kan tage et øjeblik - låser "+ Tilføj" imens, så
+          // et hurtigt tryk lige efter valg af billede ikke kan nå at
+          // tilføje tingen FØR billedet er klar (og dermed blive gemt helt
+          // uden billede, stille og uden fejl).
+          var addBtnDuringPhoto = document.getElementById("cnt-add-btn");
+          var photoLabelEl = document.getElementById("cnt-photo-label");
+          if(addBtnDuringPhoto) addBtnDuringPhoto.disabled = true;
+          if(photoLabelEl) photoLabelEl.textContent = "Behandler billede...";
           try { setPreview(await readAndResizeImage(file)); }
           catch(err){ setPreview(""); }
+          finally {
+            var addBtnAfterPhoto = document.getElementById("cnt-add-btn");
+            if(addBtnAfterPhoto) addBtnAfterPhoto.disabled = false;
+          }
           return;
         }
         var rephotoInput = e.target.closest("[data-cnt-rephoto]");

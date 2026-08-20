@@ -297,6 +297,13 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   match ligger i, med en "gå til rum"-knap. Billeder skaleres ned til maks.
   640px/JPEG i browseren (canvas), før de gemmes i `localStorage` og
   synkroniseres, så de ikke fylder for meget.
+  - **"+ Tilføj"-knappen låses, mens et valgt billede stadig skaleres ned**
+    (kan tage et øjeblik for et rigtigt kamerabillede, ofte flere MB, før
+    det skaleres). Uden dette kunne et hurtigt tryk på "+ Tilføj" lige
+    efter valg af billede nå at oprette tingen, FØR `pendingImage` var sat
+    - og tingen blev gemt helt uden billede, stille og uden nogen fejl.
+    Knappen viser "Behandler billede..." og genaktiveres, når billedet er
+    klar (eller ved fejl).
   - Ting fra før "rum" fandtes (ingen `roomId`) flyttes automatisk ind i et
     nyoprettet "Depotrum 1" første gang fanen åbnes efter opdateringen
     (`window.__dlhMigrateOrphanCountItems`), så intet forsvinder.
