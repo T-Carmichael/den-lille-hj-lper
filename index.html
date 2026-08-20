@@ -1650,8 +1650,64 @@
       catch (e) { return []; }
     }
 
+    // Fjerner fotos fra ét historik-punkt (bruges kun som nødløsning, se
+    // saveHistoryLocal nedenfor).
+    function stripItemPhotos(it) {
+      if (!it.fotoFor && !it.fotoEfter) return it;
+      var copy = {};
+      for (var k in it) copy[k] = it[k];
+      copy.fotoFor = null;
+      copy.fotoEfter = null;
+      return copy;
+    }
+
+    // Returnerer det, der RENT FAKTISK blev gemt (kan være en udgave med
+    // fotos fjernet, se nedenfor) - kaldere, der sender videre til
+    // serveren (pushHistory), skal bruge DENNE, ikke det oprindeligt
+    // givne "history", ellers forsøges den for store, oprindelige udgave
+    // sendt op igen bagefter (og fejler formentlig af samme grund der).
     function saveHistoryLocal(history) {
-      localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(history));
+      try {
+        localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(history));
+        return history;
+      } catch (e) {
+        // Browserens lokale lager er fuldt - typisk fordi mange opgaver
+        // over tid har før/efter-fotos vedhæftet, som hver især fylder en
+        // del, selv skaleret ned. Uden denne oprydning fejlede ENHVER
+        // gemning fra det punkt af (QuotaExceededError) - og fordi
+        // gemningen aldrig kom videre end netop dette trin, blev intet
+        // registreret i Opgaveoverblik, og opgaver blev aldrig ryddet fra
+        // Rapport-fanen, uanset hvad man gjorde. Fjerner først fotos fra
+        // ældre dage (alt undtagen de seneste 14 dage) for at frigøre
+        // plads, og prøver igen - selve opgave-/statusdataen (det
+        // vigtigste) bevares altid.
+        try {
+          var cutoff = new Date();
+          cutoff.setDate(cutoff.getDate() - 14);
+          var cutoffStr = cutoff.toISOString().slice(0, 10);
+          var stripped = history.map(function (day) {
+            if (day.date >= cutoffStr) return day;
+            return {
+              date: day.date, montor: day.montor, savedAt: day.savedAt,
+              items: (day.items || []).map(stripItemPhotos)
+            };
+          });
+          localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(stripped));
+          return stripped;
+        } catch (e2) {
+          // Stadig ikke plads nok - sidste udvej: fjern fotos fra ALLE
+          // dage, ikke kun de ældre. Opgave-/statusdata reddes stadig,
+          // kun fotos går tabt.
+          var strippedAll = history.map(function (day) {
+            return {
+              date: day.date, montor: day.montor, savedAt: day.savedAt,
+              items: (day.items || []).map(stripItemPhotos)
+            };
+          });
+          localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(strippedAll));
+          return strippedAll;
+        }
+      }
     }
 
     // Lægger to udgaver af ÉN dags opgaveliste sammen ved at forene dem på
@@ -1871,7 +1927,7 @@
         if (!Array.isArray(raw)) raw = [];
         history = raw.filter(function (d) { return d && d.date !== date; }).concat([entry]);
       }
-      try { saveHistoryLocal(history); } catch (e) { setStatus("⚠️ FEJL: kunne ikke gemme lokalt (" + (e && e.message) + ")"); return { ok: false }; }
+      try { history = saveHistoryLocal(history); } catch (e) { setStatus("⚠️ FEJL: kunne ikke gemme lokalt (" + (e && e.message) + ")"); return { ok: false }; }
       setStatus("💾 Gemt lokalt: " + entry.items.length + " punkter, " + date);
       if (syncCode) await pushHistory(history);
 
@@ -1911,7 +1967,7 @@
         var remote = await pullHistoryRemote();
         if (remote === null) return local;
         var merged = mergeHistory(local, migrateHistoryList(remote));
-        saveHistoryLocal(merged);
+        merged = saveHistoryLocal(merged);
         await pushHistory(merged);
         await reconcileOpenReportWithHistory(merged);
         return merged;
@@ -1940,7 +1996,7 @@
       // gemning) overskrive sletningen igen ved næste synkronisering.
       day.items[idx] = { id: itemId, deleted: true, updatedAt: now };
       day.savedAt = now;
-      saveHistoryLocal(history);
+      history = saveHistoryLocal(history);
       if (syncCode) await pushHistory(history);
       await removeItemFromOpenReport(itemId);
     };
@@ -2004,7 +2060,7 @@
         });
         if (dayChanged) day.savedAt = now;
       });
-      saveHistoryLocal(history);
+      history = saveHistoryLocal(history);
       if (syncCode) await pushHistory(history);
       return removed;
     };
@@ -2028,7 +2084,7 @@
       // lige er ændret herfra).
       day.items[idx].updatedAt = now;
       day.savedAt = now;
-      saveHistoryLocal(history);
+      history = saveHistoryLocal(history);
       if (syncCode) await pushHistory(history);
       if (status === "OK") await removeItemFromOpenReport(itemId);
     };
@@ -2222,7 +2278,23 @@
       catch (e) { return []; }
     }
     function saveCountLocal(list) {
-      localStorage.setItem(LS_COUNT_KEY, JSON.stringify(list));
+      try {
+        localStorage.setItem(LS_COUNT_KEY, JSON.stringify(list));
+        return;
+      } catch (e) {
+        // Samme nødløsning som saveHistoryLocal - lageret er fuldt, typisk
+        // pga. mange optalte tings billeder over tid. Fjerner billeder fra
+        // alle ting og prøver igen - navn/antal/rum (det vigtigste)
+        // bevares altid, kun billederne går tabt.
+        var stripped = list.map(function (t) {
+          if (!t.image) return t;
+          var copy = {};
+          for (var k in t) copy[k] = t[k];
+          copy.image = "";
+          return copy;
+        });
+        localStorage.setItem(LS_COUNT_KEY, JSON.stringify(stripped));
+      }
     }
     async function pushCount(list) {
       if (!syncCode) return;
@@ -2515,7 +2587,7 @@
       var result = {};
       if (backup.history) {
         var mergedHistory = mergeHistory(migrateHistoryList(loadHistoryLocal()), migrateHistoryList(backup.history));
-        saveHistoryLocal(mergedHistory);
+        mergedHistory = saveHistoryLocal(mergedHistory);
         if (syncCode) await pushHistory(mergedHistory);
         result.history = mergedHistory.length;
       }

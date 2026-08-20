@@ -344,6 +344,28 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     en knap aldrig kan blive hængende i "disabled" tilstand uden
     forklaring. Dette er bevidst prioriteret højt, fordi appen nu bruges
     af flere personer samtidig til rigtigt arbejde.
+  - **`localStorage` kan blive fuldt (QuotaExceededError), typisk fordi
+    mange opgaver over tid har før/efter-fotos vedhæftet** - hver skalering
+    til 640px/JPEG er stadig et sted mellem 50-150 KB, og det lægger sig
+    hurtigt oveni med mange opgaver over uger/måneder. **Dette var den
+    reelle, bekræftede årsag** til en gentaget, svær-at-genskabe fejl:
+    statusskift blev hverken ryddet fra Rapport-fanen eller vist i
+    Opgaveoverblik, fordi selve `localStorage.setItem()`-kaldet i
+    `saveHistoryLocal`/`saveCountLocal` kastede en fejl, som stoppede
+    resten af gemme-kæden (rydning, synkronisering) - fundet via en
+    midlertidig, synlig statuslinje-besked, der viste selve fejlteksten
+    ("Failed to execute 'setItem'... exceeded the quota"), efter at have
+    kigget grundigt på kode og testet uden held i lang tid. `saveHistoryLocal`
+    forsøger nu, hvis den almindelige gemning fejler: (1) fjerne fotos fra
+    dage ældre end 14 dage og prøve igen, (2) hvis stadig ikke nok plads,
+    fjerne fotos fra ALLE dage og prøve igen. Selve opgave-/statusdataen
+    (det vigtigste) bevares altid - kun ældre fotos ofres om nødvendigt.
+    `saveCountLocal` (Optælling) har samme værn (fjerner billeder fra
+    optalte ting ved pladsmangel). `saveHistoryLocal` returnerer nu den
+    FAKTISK gemte udgave (kan være beskåret), som alle kaldere, der
+    synkroniserer bagefter (`pushHistory`), bruger i stedet for den
+    oprindelige - ellers ville et forsøg på at sende den for store,
+    oprindelige udgave til serveren blot fejle af samme grund dér.
 - **Optælling-fane** (tredje fane, erstattede den tidligere AI-chat-fane
   "Struktur & optimering"): opdelt i **rum** (fx et fysisk depotrum) — man
   opretter selv rum via "+ Nyt rum" (`window.__dlhAddRoom` m.fl.), skifter
