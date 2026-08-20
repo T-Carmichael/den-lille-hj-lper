@@ -35,11 +35,27 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   - **Ingen "Gem"-knap** — opgaver logges automatisk til Opgaveoverblik, når
     man forlader et felt (titel/beskrivelse/bemærkning/ansvarlig), klikker
     en status-knap, eller et foto rent faktisk er færdigbehandlet/fjernet
-    (`autoLogToday` i det ydre script, kaldt fra `focusout`/`click`-lyttere
-    sat op i `reportFrame`'s `"load"`-event). Kalder bare den samme
-    (allerede fejlsikrede) `window.__dlhLogToday()`, som "Gem"-knappen
-    tidligere gjorde — inklusiv at rydde "Udført"-punkter fra formularen
-    bagefter.
+    (`autoLogToday` i det ydre script, kaldt fra begivenheds-lyttere sat op
+    i `reportFrame`'s `"load"`-event, hver i sin egen try/catch). Kalder
+    bare den samme (allerede fejlsikrede) `window.__dlhLogToday()`, som
+    "Gem"-knappen tidligere gjorde — inklusiv at rydde "Udført"-punkter fra
+    formularen bagefter.
+    - **Statusskift (Udført/Afventer) opdages via en `dlh-status-changed`-
+      besked, ikke ved at opfange selve klikket via bobling fra iframen**
+      (samme mønster som `dlh-photo-saved`, se nedenfor). `REPORT_HTML`s
+      `wireToggle()`/`setStatus()` sender selv beskeden, lige efter status
+      reelt er sat. Rettet fordi klik-baseret bobling fra iframen til det
+      ydre dokument i praksis viste sig ikke altid pålideligt at nå at
+      trigge den automatiske gemning - symptom: status skiftede synligt i
+      selve rapport-formularen (knappen blev grøn/rød), men opgaven blev
+      hverken ryddet fra formularen eller logget til Opgaveoverblik.
+    - **Sikkerhedsnet**: en baggrunds-tjek hvert 4. sekund (uafhængig af
+      forbindelseskode - selve loggen er 100% lokal) kigger direkte i den
+      åbne rapport-formulars DOM efter et `.item-card[data-status="OK"]`,
+      der stadig ligger der, og trigger `autoLogToday()` hvis det gør. Ren
+      ekstra robusthed, hvis en begivenheds-lytter mod forventning alligevel
+      ikke skulle nå at trigge - fanger og retter det op i under 4 sekunder,
+      uanset årsag.
     - **Foto-knappen selv trigger IKKE auto-log ved klik** (det er bare
       filvælgeren, der åbnes der — billedet er ikke klar endnu). I stedet
       sender `REPORT_HTML`s `applyPhoto()`-funktion en `dlh-photo-saved`
