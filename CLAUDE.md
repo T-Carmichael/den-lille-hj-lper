@@ -264,6 +264,22 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     IKKE `openGeneratedReport()`s brug af samme `__setReportState`/
     `deserializeState` til at vise en allerede gemt, historisk rapport (der
     skal jo netop vise de udførte punkter, ikke rydde dem væk).
+  - **Denne oprydning (og selve `pushState()`) fik flere forsøg og en mere
+    robust afsendelse, fordi den stadig kunne fejle stille under rigtig
+    samtidig brug** (4-5 personer aktive på samme tid): `pushState()`s
+    forsøg på at gemme, hvis en anden enhed nåede at gemme noget imellem
+    (409-konflikt), gik fra 3 til 6 forsøg - samme antal som
+    `safeMergePush` allerede bruger til historik/kommende opgaver/rum/
+    optælling. Desuden sendes den ryddede udgave fra `pullState()`s
+    oprydning nu direkte og ventet (`await pushState()`, EFTER
+    `pullInFlight` er nulstillet igen) i stedet for via `schedulePush()`s
+    1500ms-timer - før kunne et kald til `pushState()` midt i selve
+    hentningen blive omdirigeret til netop denne timer (fordi
+    `pullInFlight` stadig var sat), som igen kunne nå at blive overhalet/
+    nulstillet af noget andet, FØR den overhovedet fik sendt noget. Var
+    formodentlig medvirkende til, at en allerede udført opgave kunne blive
+    ved med at sidde fast/komme igen i Rapport-fanen, selv efter gentagne
+    "opdateret"-hentninger, ved rigtig samtidig brug fra flere enheder.
   - **Versionsmærket sendes som egne header-navne, ikke "rigtige" HTTP
     ETag/If-Match** (`X-Dlh-Version`/`X-Dlh-If-Version`). Første udgave
     brugte ETag/If-Match, men det gjorde at gem-kald konsekvent troede,

@@ -1338,8 +1338,15 @@
         // konflikt (status-/sletteændringer fra Opgaveoverblik på ANDRE
         // enheder når frem via historikken og næste "Hent nyeste"/baggrunds-
         // poll i stedet, se __dlhSetHistoryItemStatus/removeItemFromOpenReport).
+        // 6 forsøg (ikke 3) - samme antal som safeMergePush bruger til de
+        // andre datatyper. Med 4-5 personer, der alle bruger appen aktivt
+        // samtidig, er der reelt en del samtidige gemninger af "report" -
+        // for få forsøg kunne betyde, at en ellers korrekt oprydning (fx
+        // clearCompletedItems) opgav for tidligt under vedvarende kapløb,
+        // og en allerede udført opgave blev ved med at sidde fast/komme
+        // igen, fordi den ryddede udgave aldrig nåede at blive gemt.
         var result = { status: "conflict" };
-        for (var attempt = 0; attempt < 3 && result.status === "conflict"; attempt++) {
+        for (var attempt = 0; attempt < 6 && result.status === "conflict"; attempt++) {
           result = await putWithEtag(SYNC_KEY, state, reportEtag);
           if (result.status === "conflict") {
             var fresh = await fetchWithEtag(SYNC_KEY);
@@ -1368,6 +1375,7 @@
       if (pushTimer || pushInFlight) return;
       if (showStatus) setStatus("Henter nyeste...");
       pullInFlight = true;
+      var needsClearPush = false;
       try {
         var remote = await fetchWithEtag(SYNC_KEY);
         if (remote === null) throw new Error("fetch failed");
@@ -1414,7 +1422,7 @@
           if (reportFrame.contentDocument.querySelector('.item-card[data-status="OK"]') &&
               reportFrame.contentWindow.__clearCompletedItems) {
             reportFrame.contentWindow.__clearCompletedItems();
-            schedulePush();
+            needsClearPush = true;
           }
         } catch (e) {}
         setStatus("Forbundet · opdateret " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }));
@@ -1422,6 +1430,19 @@
         if (showStatus) setStatus("Forbundet · kunne ikke hente (tjek internet)");
       } finally {
         pullInFlight = false;
+      }
+      // Sendes FØRST her, efter pullInFlight er nulstillet - pushState()
+      // afviser sig selv, mens pullInFlight er sat (for ikke at overskrive
+      // en igangværende hentning), så et kald indefra selve hentningen
+      // ville ellers bare stille blive omdirigeret til schedulePush()'s
+      // 1500ms-timer, som kan nå at blive overhalet/annulleret af noget
+      // andet i mellemtiden. Direkte og ventet her, med pushState()'s egne
+      // 6 forsøg ved kapløb, giver oprydningen den bedste chance for
+      // rent faktisk at nå serveren - det var netop dette, der fik
+      // allerede udførte opgaver til at blive ved med at sidde fast/komme
+      // igen i praksis, når flere enheder var aktive samtidig.
+      if (needsClearPush) {
+        try { await pushState(); } catch (e) {}
       }
     }
 
