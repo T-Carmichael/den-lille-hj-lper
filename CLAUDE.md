@@ -13,6 +13,18 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   enheds-sync'en (se nedenfor). Bundles automatisk af Netlify ved deploy,
   kræver ikke npm install lokalt.
 - `netlify.toml` — deploy-config til Netlify (ingen build, publish er roden).
+- `_headers` — beder Netlify/browseren om ALDRIG at cache `index.html`/
+  `admin-restore.html` (`Cache-Control: no-cache, no-store, must-revalidate`).
+  Tilføjet fordi flere rapporterede rettelser (statusændringer, der
+  "ikke gjorde noget" i hverken Rapport- eller Opgaveoverblik-fanen)
+  ikke kunne genskabes i test, uanset hvor mange gange koden blev
+  rettet - mistanke om, at enheden viste en cachet, forældet udgave af
+  appen, der aldrig hentede den nyeste `index.html` ned, selv efter
+  "genindlæsning". Løser IKKE et scenarie, hvor en allerede åben
+  browser-fane bare ligger stille i baggrunden (den kører stadig den
+  gamle, indlæste JS i hukommelsen, uanset cache-headers) - kræver en
+  reel ny sidehentning (luk fanen helt og åbn den igen, eller et
+  "hårdt" genindlæs).
 - Ingen andre kildefiler. Redigér `index.html` direkte.
 
 ## Hvad appen indeholder
