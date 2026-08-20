@@ -1589,9 +1589,12 @@
         // op igen" ved næste genindlæsning.
         try {
           reportFrame.contentDocument.addEventListener("dlh-status-changed", function (e) {
+            setStatus("👆 Status-skift modtaget " + new Date().toLocaleTimeString("da-DK")); // MIDLERTIDIGT (diagnostik)
             if (window.autoLogToday) {
               touchItemCard(e.target);
               window.autoLogToday();
+            } else {
+              setStatus("⚠️ window.autoLogToday findes ikke!"); // MIDLERTIDIGT (diagnostik)
             }
           });
         } catch (e) {}
@@ -1816,7 +1819,14 @@
     };
 
     // Gemmer dagens (eller den valgte dato's) opgaver fra rapport-formularen ind i overblikket
+    // MIDLERTIDIGT (diagnostik): sætter tydelige, synlige statusbeskeder
+    // undervejs, og viser selve fejlbeskeden, hvis noget uventet går galt -
+    // netop fordi en gentaget, svær-at-genskabe fejl ikke kunne findes ved
+    // almindelig fejlsikker (stille) opførsel. Fjernes igen, når fejlen er
+    // fundet og rettet for alvor.
     window.__dlhLogToday = async function () {
+      try {
+      setStatus("🔍 Logger... (" + new Date().toLocaleTimeString("da-DK") + ")");
       // FØR formularens tilstand overhovedet samles sammen: er vi
       // forbundet, så hent den nyeste historik og fjern ethvert punkt
       // herfra, som ALLEREDE er udført/slettet et andet sted (se
@@ -1840,7 +1850,7 @@
         } catch (e) {}
       }
       var state = getReportState();
-      if (!state) return { ok: false };
+      if (!state) { setStatus("⚠️ FEJL: kunne ikke læse rapport-data (getReportState)"); return { ok: false }; }
       var date = (state.meta && state.meta.dato) || new Date().toISOString().slice(0, 10);
       var entry = {
         date: date,
@@ -1861,7 +1871,8 @@
         if (!Array.isArray(raw)) raw = [];
         history = raw.filter(function (d) { return d && d.date !== date; }).concat([entry]);
       }
-      try { saveHistoryLocal(history); } catch (e) { return { ok: false }; }
+      try { saveHistoryLocal(history); } catch (e) { setStatus("⚠️ FEJL: kunne ikke gemme lokalt (" + (e && e.message) + ")"); return { ok: false }; }
+      setStatus("💾 Gemt lokalt: " + entry.items.length + " punkter, " + date);
       if (syncCode) await pushHistory(history);
 
       // Fjern de nu-loggede "Udført"-opgaver fra selve formularen, så de ikke
@@ -1874,7 +1885,14 @@
         }
       } catch (e) {}
 
+      setStatus("✓ Logget færdigt: " + entry.items.length + " punkter, " + date + " kl. " + new Date().toLocaleTimeString("da-DK"));
       return { ok: true, date: date };
+      } catch (outerErr) {
+        // MIDLERTIDIGT (diagnostik): viser fejlen tydeligt i stedet for at
+        // fejle helt stille - dette er PRÆCIS det, der skal findes/rettes.
+        setStatus("⚠️ UVENTET FEJL i __dlhLogToday: " + (outerErr && outerErr.message ? outerErr.message : String(outerErr)));
+        return { ok: false };
+      }
     };
 
     // Henter nyeste historik fra den delte kode (hvis forbundet), lægger sammen med
