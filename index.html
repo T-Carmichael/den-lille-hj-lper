@@ -2447,17 +2447,10 @@
     }
 
     window.__dlhDeleteHistoryItem = async function (date, itemId) {
-      // MIDLERTIDIGT (diagnostik): viser tydeligt HVOR opslaget fejler.
-      if (!itemId) { alert("🔍 Fejlsøgning: intet id angivet (dato=" + date + ")"); return; }
+      if (!itemId) return;
       var history = loadHistoryLocal();
       var found = findHistoryItemByDate(history, date, itemId);
-      if (!found) {
-        var daysWithDate = history.filter(function (d) { return d.date === date; });
-        var idsThatDay = daysWithDate.map(function (d) { return (d.items || []).map(function (it) { return it.id; }).join(","); }).join(" | ");
-        alert("🔍 Fejlsøgning: fandt IKKE punktet. dato=" + date + ", id=" + itemId +
-          ". Dage med den dato: " + daysWithDate.length + ". Id'er de dage: [" + idsThatDay + "]. Historikken har " + history.length + " dage ialt.");
-        return;
-      }
+      if (!found) return;
       var now = new Date().toISOString();
       // Tombstonen får sit EGET updatedAt (se mergeHistoryItems) - ellers
       // kunne en urørt, gammel kopi af punktet (fx stadig liggende i en
@@ -2466,14 +2459,6 @@
       found.day.items[found.idx] = { id: itemId, deleted: true, updatedAt: now };
       found.day.savedAt = now;
       history = saveHistoryLocal(history);
-      // MIDLERTIDIGT (diagnostik): bekræft at tombstonen faktisk sidder i
-      // det, der lige blev gemt.
-      var verify = findHistoryItemByDate(history, date, itemId);
-      if (!verify || !verify.day.items[verify.idx].deleted) {
-        alert("🔍 Fejlsøgning: punktet blev fundet og markeret slettet, men ses IKKE som slettet i det, der blev gemt bagefter (uventet).");
-      } else {
-        alert("🔍 Fejlsøgning: punktet blev fundet og slettet korrekt lokalt (dato=" + date + ", id=" + itemId + ").");
-      }
       if (syncCode) await pushHistory(history);
       await removeItemFromOpenReport(itemId);
     };
@@ -2658,9 +2643,33 @@
 
     // Fjerner en fuldført kommende opgave helt og permanent fra listen (bruges
     // af Opgaveoverblikkets "✕"-knap) - i modsætning til __dlhCompleteUpcoming,
-    // som bare skjuler den, sletter denne den for altid.
+    // som bare skjuler den (men beholder den som "fuldført" i statistikker).
+    //
+    // RETTET: brugte tidligere en RIGTIG (hård) sletning - filtrerede
+    // punktet helt væk fra listen, FØR den blev sendt til serveren. Det er
+    // netop det, resten af appen bevidst IKKE gør noget andet sted (se fx
+    // __dlhDeleteHistoryItem) - en hård sletning "genopstår", hvis en
+    // efterfølgende sammenlægning møder en ældre udgave (fra serveren, eller
+    // en anden enhed), der endnu ikke har hørt om sletningen: intet lokalt
+    // punkt findes at sammenligne imod, så den ældre udgave vinder ubetinget
+    // og bliver gemt igen - PRÆCIS i det øjeblik denne funktion selv sender
+    // den (nu "slettede") liste til serveren via pushUpcoming/safeMergePush.
+    // I praksis: "✕" så ud til slet ikke at gøre noget, fordi punktet var
+    // tilbage i det øjeblik skærmen blev tegnet igen. Nu bruges i stedet en
+    // tombstone (samme princip som ALT andet i appen): punktet beholdes i
+    // listen, men completedAt ryddes (så det hverken tælles som aktivt
+    // ELLER som "fuldført" nogen steder) og updatedAt sættes til nu - så en
+    // sammenlægning altid foretrækker DENNE (nyeste) udgave frem for en
+    // ældre, endnu ikke opdateret kopi.
     window.__dlhDeleteUpcomingEntry = async function (id) {
-      var list = loadUpcomingLocal().filter(function (t) { return t.id !== id; });
+      var now = new Date().toISOString();
+      var list = loadUpcomingLocal().map(function (t) {
+        if (t.id !== id) return t;
+        return {
+          id: t.id, title: t.title, note: t.note, dueDate: t.dueDate,
+          createdAt: t.createdAt, updatedAt: now, deleted: true, completedAt: null
+        };
+      });
       saveUpcomingLocal(list);
       if (syncCode) await pushUpcoming(list);
     };
@@ -4004,12 +4013,6 @@
         if(!requireOvPassword()) return;
         if(!confirm("Slet denne opgave permanent? Det kan ikke fortrydes.")) return;
         btn.disabled = true;
-        // MIDLERTIDIGT (diagnostik): viser tydeligt, hvilken vej knappen
-        // tager, og med hvilke værdier - så vi kan se PRÆCIS hvor en
-        // sletning, der ikke virker, går galt.
-        alert("🔍 Fejlsøgning: knap-data er " + (btn.dataset.upid
-          ? "upid=" + btn.dataset.upid
-          : "dato=" + JSON.stringify(btn.dataset.date) + " id=" + JSON.stringify(btn.dataset.id)));
         try {
           if(btn.dataset.upid){
             await window.__dlhDeleteUpcomingEntry(btn.dataset.upid);
@@ -4017,7 +4020,6 @@
             await window.__dlhDeleteHistoryItem(btn.dataset.date, btn.dataset.id);
           }
         } catch (e) {
-          alert("🔍 Fejlsøgning: UVENTET FEJL under sletning: " + (e && e.message ? e.message : String(e)));
         } finally {
           renderList();
         }
@@ -4202,7 +4204,13 @@
       var freshHistory = await window.__dlhRefreshHistory();
       if(freshHistory){ renderList(); renderGenRepLocations(); }
       var freshUpcoming = await window.__dlhRefreshUpcoming();
-      if(freshUpcoming) renderUpcoming();
+      // renderList() viser OGSÅ fuldførte kommende opgaver (fx indsendt via
+      // QR-koden) - skal derfor gen-tegnes her, ikke kun renderUpcoming()
+      // (som kun opdaterer den separate, AKTIVE "Kommende opgaver"-liste).
+      // Uden dette kunne et nyligt hentet, fuldført punkt være usynligt i
+      // selve overblikket, indtil et helt ANDET tilfældigt render (fx en
+      // senere historik-opdatering) tilfældigvis fangede det.
+      if(freshUpcoming){ renderUpcoming(); renderList(); }
       setOvSyncStatus(connected ? "✓ Opdateret " + nowClock() : "");
     };
 
@@ -4220,7 +4228,7 @@
         var freshHistory = await window.__dlhRefreshHistory();
         if(freshHistory){ renderList(); renderGenRepLocations(); }
         var freshUpcoming = await window.__dlhRefreshUpcoming();
-        if(freshUpcoming) renderUpcoming();
+        if(freshUpcoming){ renderUpcoming(); renderList(); }
         setOvSyncStatus(connected ? "✓ Opdateret " + nowClock() : "");
       } catch (e) {} // baggrunds-opdatering må aldrig kunne vise en fejl - prøver bare igen om 20 sek.
     }, 20000);

@@ -134,6 +134,42 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     Kunne ikke genskabes med normale, "rene" testscenarier - kun ved
     bevidst at seede to dag-objekter med samme dato, hvilket bekræftede
     hypotesen (samme symptom, punktet forblev fuldstændig urørt).
+    **Denne rettelse løste IKKE hele problemet** - se de to punkter
+    nedenfor for den reelle, bekræftede årsag til den konkrete sag, brugeren
+    meldte (en QR-indsendt opgave, markeret udført via "✓ Udført" i selve
+    Kommende opgaver-listen, som ikke kunne slettes bagefter).
+  - **`__dlhDeleteUpcomingEntry` (kommende opgavers "✕"-knap) brugte en
+    RIGTIG (hård) sletning i stedet for en tombstone** - eneste sted i hele
+    appen, der gjorde det (alt andet: historik, depotrum, optælling, faste
+    opgaver, bruger konsekvent tombstones af netop denne grund). En hård
+    sletning fjerner punktet helt fra den lokale liste, FØR den sendes til
+    serveren - men selve afsendelsen (`pushUpcoming`/`safeMergePush`) henter
+    SELV den nyeste server-udgave og lægger sammen med den lokale FØRST. Når
+    det lokale punkt er væk (intet at sammenligne imod), vinder serverens
+    ældre, endnu-ikke-slettede udgave af `mergeUpcoming` ubetinget, og bliver
+    gemt tilbage lokalt igen - i praksis så det ud som om "✕" slet ikke
+    gjorde noget, fordi punktet var tilbage i samme øjeblik skærmen blev
+    tegnet igen (bekræftet ved at genskabe præcis dette forløb i test: en
+    allerede-fuldført kommende opgave, kendt af både enheden og serveren,
+    forblev synlig efter et kald til `__dlhDeleteUpcomingEntry`). Rettet til
+    samme tombstone-mønster som resten af appen: punktet bliver liggende i
+    listen, men `completedAt` ryddes (`null`) og `updatedAt` sættes til nu -
+    så det hverken tælles som aktivt (`__dlhGetUpcoming` kræver `!deleted`)
+    eller som fuldført (`__dlhGetCompletedUpcoming` kræver BÅDE `deleted`
+    OG `completedAt`), men en sammenlægning altid foretrækker denne nyeste
+    udgave frem for en ældre kopi et andet sted.
+  - **`renderList()` (selve Opgaveoverblik-listen, som også viser fuldførte
+    kommende opgaver/QR-indsendelser) blev ikke gen-tegnet efter kommende
+    opgaver var hentet færdigt** - hverken i `__dlhRenderOverview` eller i
+    den periodiske 20-sekunders baggrunds-opdatering. Begge kaldte kun
+    `renderUpcoming()` (den SEPARATE, aktive "Kommende opgaver"-liste)
+    efter `__dlhRefreshUpcoming()` var færdig, ikke `renderList()`. I
+    praksis betød det, at et nyligt fuldført/QR-indsendt punkt, der lige
+    var hentet fra serveren, kunne være usynligt i selve overblikket ved
+    første fane-åbning - det dukkede først op ved en SENERE gen-tegning
+    (fx et tilfældigt sammenfald med en historik-opdatering), hvilket gjorde
+    opførslen inkonsekvent og svær at regne ud for brugeren. Rettet ved at
+    kalde `renderList()` begge steder, lige efter `renderUpcoming()`.
   - **Sammenlægning af historik sker punkt for punkt, ikke hel dag ad
     gangen** (`mergeHistory`/`mergeHistoryItems`) - et punkt, der kun
     findes hos den ene part, bevares altid. Punkter uden rigtigt id (fra
