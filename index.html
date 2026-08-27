@@ -515,6 +515,21 @@
   }
   .ov-task-done:hover{color:#7CD99A;border-color:rgba(124,217,154,0.5);}
   .ov-task-done:disabled{opacity:.5;cursor:default;}
+  .ov-task-undo{
+    flex:0 0 auto;
+    background:none;
+    border:1px solid var(--line);
+    color:var(--sub);
+    font-size:11.5px;
+    font-weight:600;
+    line-height:1;
+    padding:5px 9px;
+    border-radius:8px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .ov-task-undo:hover{color:#FF8F70;border-color:rgba(255,143,112,0.5);}
+  .ov-task-undo:disabled{opacity:.5;cursor:default;}
   .ov-task-note{font-size:12.5px;color:var(--ink);margin-top:6px;border-top:1px solid var(--line);padding-top:6px;}
   .ov-task-note b{color:var(--sub);font-weight:600;}
   .ov-empty{
@@ -1540,11 +1555,31 @@
       setStatus("Ikke forbundet");
     });
 
+    // Sætter selv dato-feltet til dags dato, hvis det viser en anden (eller
+    // slet ingen) dato - så man ikke selv skal huske at skifte dato, når en
+    // ny dag starter. Kaldes EFTER en eventuel hentning (pullState) er
+    // færdig, så den ikke bliver overskrevet af en synkroniseret, ældre
+    // dato bagefter. Rører kun selve dato-feltet - "Afventer"-opgaver
+    // bliver stadig stående i formularen som hidtil.
+    function ensureTodayDate() {
+      try {
+        var dateEl = reportFrame.contentDocument.getElementById("m-dato");
+        if (!dateEl) return;
+        var today = new Date().toISOString().slice(0, 10);
+        if (dateEl.value !== today) {
+          dateEl.value = today;
+          schedulePush();
+        }
+      } catch (e) {}
+    }
+
     reportFrame.addEventListener("load", function () {
       reportReady = true;
       if (syncCode) {
-        pullState(true);
+        pullState(true).then(ensureTodayDate);
         startPolling();
+      } else {
+        ensureTodayDate();
       }
       // lyt efter ændringer inde i rapporten og gem dem automatisk
       try {
@@ -1589,12 +1624,9 @@
         // op igen" ved næste genindlæsning.
         try {
           reportFrame.contentDocument.addEventListener("dlh-status-changed", function (e) {
-            setStatus("👆 Status-skift modtaget " + new Date().toLocaleTimeString("da-DK")); // MIDLERTIDIGT (diagnostik)
             if (window.autoLogToday) {
               touchItemCard(e.target);
               window.autoLogToday();
-            } else {
-              setStatus("⚠️ window.autoLogToday findes ikke!"); // MIDLERTIDIGT (diagnostik)
             }
           });
         } catch (e) {}
@@ -1874,15 +1906,13 @@
       return changed;
     };
 
-    // Gemmer dagens (eller den valgte dato's) opgaver fra rapport-formularen ind i overblikket
-    // MIDLERTIDIGT (diagnostik): sætter tydelige, synlige statusbeskeder
-    // undervejs, og viser selve fejlbeskeden, hvis noget uventet går galt -
-    // netop fordi en gentaget, svær-at-genskabe fejl ikke kunne findes ved
-    // almindelig fejlsikker (stille) opførsel. Fjernes igen, når fejlen er
-    // fundet og rettet for alvor.
+    // Gemmer dagens (eller den valgte dato's) opgaver fra rapport-formularen ind i overblikket.
+    // Fejl undervejs vises i statuslinjen i stedet for at fejle helt stille
+    // (fandt tidligere en reel, gentaget datatabsfejl - localStorage løb tør
+    // for plads - som ellers var umulig at opdage, fordi funktionen bare gav
+    // stille op midtvejs. Se saveHistoryLocal for selve rettelsen).
     window.__dlhLogToday = async function () {
       try {
-      setStatus("🔍 Logger... (" + new Date().toLocaleTimeString("da-DK") + ")");
       // FØR formularens tilstand overhovedet samles sammen: er vi
       // forbundet, så hent den nyeste historik og fjern ethvert punkt
       // herfra, som ALLEREDE er udført/slettet et andet sted (se
@@ -1928,7 +1958,6 @@
         history = raw.filter(function (d) { return d && d.date !== date; }).concat([entry]);
       }
       try { history = saveHistoryLocal(history); } catch (e) { setStatus("⚠️ FEJL: kunne ikke gemme lokalt (" + (e && e.message) + ")"); return { ok: false }; }
-      setStatus("💾 Gemt lokalt: " + entry.items.length + " punkter, " + date);
       if (syncCode) await pushHistory(history);
 
       // Fjern de nu-loggede "Udført"-opgaver fra selve formularen, så de ikke
@@ -1941,11 +1970,10 @@
         }
       } catch (e) {}
 
-      setStatus("✓ Logget færdigt: " + entry.items.length + " punkter, " + date + " kl. " + new Date().toLocaleTimeString("da-DK"));
       return { ok: true, date: date };
       } catch (outerErr) {
-        // MIDLERTIDIGT (diagnostik): viser fejlen tydeligt i stedet for at
-        // fejle helt stille - dette er PRÆCIS det, der skal findes/rettes.
+        // Uventet fejl - vis den i stedet for at fejle helt stille (en
+        // stille fejl her er svær at opdage/genskabe i praksis).
         setStatus("⚠️ UVENTET FEJL i __dlhLogToday: " + (outerErr && outerErr.message ? outerErr.message : String(outerErr)));
         return { ok: false };
       }
@@ -3466,6 +3494,19 @@
           }
           return;
         }
+        var undoBtn = e.target.closest(".ov-task-undo");
+        if(undoBtn){
+          if(!requireOvPassword()) return;
+          if(!confirm("Sæt denne opgave tilbage til \"Afventer\"? Brug det, hvis \"Udført\" blev trykket ved en fejl.")) return;
+          undoBtn.disabled = true;
+          try {
+            await window.__dlhSetHistoryItemStatus(undoBtn.dataset.date, undoBtn.dataset.id, "AFV");
+          } catch (e) {
+          } finally {
+            renderList();
+          }
+          return;
+        }
         var btn = e.target.closest(".ov-task-delete");
         if(!btn) return;
         if(!requireOvPassword()) return;
@@ -3622,6 +3663,9 @@
                 '<span class="ov-pill ' + statusClass(it.status) + '">' + statusLabel(it.status) + '</span>' +
                 (it.status !== "OK" && !it._upcomingId
                   ? '<button class="ov-task-done" type="button"' + doneAttrs + ' title="Marker udført">✓ Udført</button>'
+                  : '') +
+                (it.status === "OK" && !it._upcomingId
+                  ? '<button class="ov-task-undo" type="button"' + doneAttrs + ' title="Fortryd - sæt tilbage til Afventer">↩ Fortryd</button>'
                   : '') +
                 '<button class="ov-task-delete" type="button"' + delAttrs + ' title="Slet opgave">✕</button>' +
               '</div>' +

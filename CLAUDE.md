@@ -196,6 +196,15 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     titel/beskrivelse/ansvarlig på samme dato (typisk rester fra før
     id-migreringen), beholder den bedste status, fjerner resten som
     tombstones.
+  - **"↩ Fortryd"-knap**: vises kun på punkter, der allerede er "Udført",
+    ved siden af "✕"-slet-knappen. Sætter status tilbage til "Afventer" -
+    til den situation hvor "Udført" blev trykket ved en fejl. Kræver
+    samme adgangskode som resten af status-/sletningsfunktionerne
+    (`requireOvPassword()`) og en ekstra `confirm()`, ligesom sletning.
+    Genbruger den allerede eksisterende, generiske
+    `window.__dlhSetHistoryItemStatus(date, itemId, status)` (samme
+    funktion som "✓ Udført"-knappen bruger, bare med `"AFV"` i stedet for
+    `"OK"`) - ingen ny gemme-/sync-logik nødvendig.
   - **"✓ Udført"-knappen i Opgaveoverblik vises for alt, der ikke allerede
     er "Udført"** — altså både "Afventer" OG "Ikke udfyldt" (`it.status
     !== "OK"` i `renderList`, ikke længere kun `it.status === "AFV"`).
@@ -366,6 +375,32 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     synkroniserer bagefter (`pushHistory`), bruger i stedet for den
     oprindelige - ellers ville et forsøg på at sende den for store,
     oprindelige udgave til serveren blot fejle af samme grund dér.
+    Fejlfindingen brugte midlertidigt en synlig, meget "snakkende"
+    statuslinje (hvert skridt i `__dlhLogToday`, samt selve `dlh-status-
+    changed`-modtagelsen) til at afsløre fejlen uden direkte adgang til
+    brugerens data - denne ekstra "snak" er fjernet igen nu hvor
+    årsagen er fundet og rettet; kun de reelle fejlbeskeder (fx "kunne
+    ikke gemme lokalt") er beholdt i statuslinjen, da de er nyttige
+    permanent (stille fejl var netop det, der gjorde denne fejl så svær
+    at opdage første gang).
+    - **Dette løser kun symptomet ved pladsmangel (ofrer ældre fotos),
+      ikke selve den underliggende plads-begrænsning** - `localStorage`
+      har typisk kun ca. 5 MB i alt pr. side. Med Optælling-fanen i
+      brug (endnu flere fotos over tid) vil selv "ofr ældre fotos"
+      -strategien før eller siden ramme et loft. Planen (aftalt, endnu
+      IKKE påbegyndt) er at flytte selve lagringen fra `localStorage`
+      til `IndexedDB`, som har et langt større loft (typisk 50+ MB,
+      ofte betydeligt mere) - kræver en mere grundig omskrivning, da
+      IndexedDB er asynkront (sandsynligvis en hukommelses-cache +
+      "skriv igennem til IndexedDB i baggrunden"-arkitektur, så ikke
+      alle steder, der læser historik/optælling synkront, skal skrives om).
+- **Rapport-fanens dato-felt sætter automatisk sig selv til dags dato**
+  (`ensureTodayDate()` i det ydre script, kaldt fra `reportFrame`'s
+  `"load"`-event - EFTER en eventuel `pullState()` er færdig, så den ikke
+  bliver overskrevet af en synkroniseret, ældre dato bagefter). Rører kun
+  selve dato-feltet, ikke resten af formularen - "Afventer"-punkter bliver
+  stadig stående som hidtil, uanset dato. Tilføjet så man ikke selv skal
+  huske at skifte dato manuelt, når en ny dag starter.
 - **Optælling-fane** (tredje fane, erstattede den tidligere AI-chat-fane
   "Struktur & optimering"): opdelt i **rum** (fx et fysisk depotrum) — man
   opretter selv rum via "+ Nyt rum" (`window.__dlhAddRoom` m.fl.), skifter
