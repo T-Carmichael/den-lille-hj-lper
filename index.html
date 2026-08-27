@@ -2447,10 +2447,17 @@
     }
 
     window.__dlhDeleteHistoryItem = async function (date, itemId) {
-      if (!itemId) return;
+      // MIDLERTIDIGT (diagnostik): viser tydeligt HVOR opslaget fejler.
+      if (!itemId) { alert("🔍 Fejlsøgning: intet id angivet (dato=" + date + ")"); return; }
       var history = loadHistoryLocal();
       var found = findHistoryItemByDate(history, date, itemId);
-      if (!found) return;
+      if (!found) {
+        var daysWithDate = history.filter(function (d) { return d.date === date; });
+        var idsThatDay = daysWithDate.map(function (d) { return (d.items || []).map(function (it) { return it.id; }).join(","); }).join(" | ");
+        alert("🔍 Fejlsøgning: fandt IKKE punktet. dato=" + date + ", id=" + itemId +
+          ". Dage med den dato: " + daysWithDate.length + ". Id'er de dage: [" + idsThatDay + "]. Historikken har " + history.length + " dage ialt.");
+        return;
+      }
       var now = new Date().toISOString();
       // Tombstonen får sit EGET updatedAt (se mergeHistoryItems) - ellers
       // kunne en urørt, gammel kopi af punktet (fx stadig liggende i en
@@ -2459,6 +2466,14 @@
       found.day.items[found.idx] = { id: itemId, deleted: true, updatedAt: now };
       found.day.savedAt = now;
       history = saveHistoryLocal(history);
+      // MIDLERTIDIGT (diagnostik): bekræft at tombstonen faktisk sidder i
+      // det, der lige blev gemt.
+      var verify = findHistoryItemByDate(history, date, itemId);
+      if (!verify || !verify.day.items[verify.idx].deleted) {
+        alert("🔍 Fejlsøgning: punktet blev fundet og markeret slettet, men ses IKKE som slettet i det, der blev gemt bagefter (uventet).");
+      } else {
+        alert("🔍 Fejlsøgning: punktet blev fundet og slettet korrekt lokalt (dato=" + date + ", id=" + itemId + ").");
+      }
       if (syncCode) await pushHistory(history);
       await removeItemFromOpenReport(itemId);
     };
@@ -3989,6 +4004,12 @@
         if(!requireOvPassword()) return;
         if(!confirm("Slet denne opgave permanent? Det kan ikke fortrydes.")) return;
         btn.disabled = true;
+        // MIDLERTIDIGT (diagnostik): viser tydeligt, hvilken vej knappen
+        // tager, og med hvilke værdier - så vi kan se PRÆCIS hvor en
+        // sletning, der ikke virker, går galt.
+        alert("🔍 Fejlsøgning: knap-data er " + (btn.dataset.upid
+          ? "upid=" + btn.dataset.upid
+          : "dato=" + JSON.stringify(btn.dataset.date) + " id=" + JSON.stringify(btn.dataset.id)));
         try {
           if(btn.dataset.upid){
             await window.__dlhDeleteUpcomingEntry(btn.dataset.upid);
@@ -3996,6 +4017,7 @@
             await window.__dlhDeleteHistoryItem(btn.dataset.date, btn.dataset.id);
           }
         } catch (e) {
+          alert("🔍 Fejlsøgning: UVENTET FEJL under sletning: " + (e && e.message ? e.message : String(e)));
         } finally {
           renderList();
         }
