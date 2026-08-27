@@ -25,7 +25,10 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   gamle, indlæste JS i hukommelsen, uanset cache-headers) - kræver en
   reel ny sidehentning (luk fanen helt og åbn den igen, eller et
   "hårdt" genindlæs).
-- Ingen andre kildefiler. Redigér `index.html` direkte.
+- `tilfoej-opgave.html` — separat, selvstændig side til at tilføje en
+  opgave via QR-kode (se afsnittet om QR-opgaver nedenfor). Ikke en del af
+  selve app-fanerne, linkes kun til via QR-koden/linket.
+- Udover disse er der ingen andre kildefiler. Redigér `index.html` direkte.
 
 ## Hvad appen indeholder
 
@@ -451,6 +454,47 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     Optælling-fanen, ikke Rapport/Opgaveoverblik.
   - Talt med i 💾 Backup-knappen og 📥 Gendan-knappen (`backup.faste`,
     samme sammenlægningsprincip som resten af backup-funktionen).
+- **Tilføj opgave via QR-kode**: en "📱 QR-kode"-knap ved siden af "Kopiér
+  kode" i den forbundne synk-linje viser en QR-kode, der peger på
+  `tilfoej-opgave.html?kode=<den aktuelle forbindelseskode>`. Andre (fx en
+  kollega uden appen installeret, eller en ekstern person) kan scanne den
+  med mobilkameraet og sende en opgave direkte ind i "Kommende opgaver" —
+  uden at åbne selve appen, installere noget eller logge ind. Formularen
+  har kun Titel (påkrævet), Beskrivelse og "Dit navn" (begge valgfrie) —
+  navnet lægges ind i opgavens note som "📱 Indsendt via QR-kode af X", så
+  man kan se/spørge hvem der sendte den. Siden skriver direkte til samme
+  `upcoming`-synk-nøgle som selve appen, med samme "hent nyeste, læg
+  sammen, gem"-mønster (ETag-beskyttet, op til 6 forsøg) som resten af
+  appen bruger for kommende opgaver — ingen ændringer nødvendige i
+  `netlify/edge-functions/sync.js`. Ingen adgangskode kræves for at
+  INDSENDE (det er hele pointen — udefrakommende har ikke appens kode 8961
+  og skal heller ikke bruge den); at ÆNDRE/slette en allerede indsendt
+  opgave foregår som altid inde i selve Opgaveoverblik-fanen, bag den
+  almindelige adgangskode.
+  - **QR-koden tegnes af en selvskrevet, indlejret QR-encoder** (samme
+    IIFE-mønster som resten af appen, ingen ekstern billedtjeneste eller
+    CDN-afhængighed — appen har ingen build-proces til at hente et npm-
+    bibliotek ind, og et CDN-link ville stoppe med at virke offline/bag
+    en firewall). Understøtter kun byte-mode og et fast mask-mønster
+    (0) — tilstrækkeligt robust til korte links (op til version 10 /
+    213 bytes ved fejlrettelsesniveau M, rigeligt til denne apps URL'er).
+    **Grundigt verificeret** før den blev taget i brug: alle interne
+    tabeller (Reed-Solomon-blokke, alignment-mønster-positioner,
+    BCH-generatorpolynomier) er hentet direkte fra kildekoden til det
+    velafprøvede python-bibliotek `qrcode`, og selve modul-for-modul
+    outputtet er sammenlignet bit-for-bit mod dette biblioteks output for
+    ~40 testtilfælde på tværs af version 1-10 (inklusiv flere blok-grænser
+    og version 7's ekstra version-info-blok). Fandt og rettede undervejs to
+    reelle fejl (en JS/Python for-løkke-forskel, der korrumperede kolonne-
+    rækkefølgen ved data-placering, og en forkert rækkefølge mellem
+    alignment- og timing-mønster-opsætning) — begge ville have givet
+    QR-koder, der enten slet ikke kunne scannes, eller scannede forkert
+    indhold, uden at det nødvendigvis var synligt ved et hurtigt kig.
+    Efter rettelserne matchede output 100% for alle testtilfælde. Testet
+    yderligere ende-til-ende: den faktiske QR-kode, som appens egen knap
+    tegner, er screenshottet og afkodet med en rigtig, uafhængig
+    QR-scanner (Python `pyzbar`), som bekræftede at den dekoder til
+    nøjagtig det forventede link.
 - **Del/installér**: Web Share API + download-fallback, samt en indlejret
   web app manifest (data-URI) til "Installér som app".
 - **Backup (💾) / Gendan (📥)-knapper** øverst i appen (ved siden af

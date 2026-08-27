@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Tilføj opgave - Den lille hjælper</title>
+<style>
+  :root{
+    --navy:#16293C;
+    --navy-2:#20374D;
+    --paper:#F6F5F1;
+    --card:#FFFFFF;
+    --ink:#1B2126;
+    --sub:#5C6670;
+    --line:#DCD7CC;
+    --ok:#2E7D46;
+    --ok-bg:#E4F3E8;
+    --err:#B6431E;
+    --err-bg:#FBEAE2;
+    --amber:#D89A2C;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;
+  }
+  .topbar{
+    background:var(--navy);
+    color:#fff;
+    padding:22px 16px 20px;
+    border-bottom:5px solid var(--amber);
+  }
+  .topbar h1{margin:0;font-size:19px;}
+  .topbar p{margin:6px 0 0;font-size:13px;color:#C9D2DA;line-height:1.4;}
+  .wrap{max-width:480px;margin:0 auto;padding:18px 16px 60px;}
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:18px;
+  }
+  label{display:block;font-size:13px;font-weight:600;color:var(--sub);margin:14px 0 6px;}
+  label:first-of-type{margin-top:0;}
+  input[type=text], textarea{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:10px 11px;
+    font-size:15px;
+    font-family:inherit;
+    color:var(--ink);
+    background:#fff;
+  }
+  textarea{resize:vertical;min-height:80px;}
+  .required{color:var(--err);}
+  .btn{
+    display:block;
+    width:100%;
+    margin-top:18px;
+    padding:13px 16px;
+    border:none;
+    border-radius:10px;
+    background:linear-gradient(135deg,#FFC857,#FF9F1C);
+    color:#241703;
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .btn:disabled{opacity:.55;cursor:default;}
+  .msg{
+    margin-top:14px;
+    padding:12px 14px;
+    border-radius:10px;
+    font-size:13.5px;
+    line-height:1.5;
+    display:none;
+  }
+  .msg.show{display:block;}
+  .msg.ok{background:var(--ok-bg);color:var(--ok);}
+  .msg.err{background:var(--err-bg);color:var(--err);}
+  .success-box{display:none;text-align:center;padding:30px 10px;}
+  .success-box.show{display:block;}
+  .success-box .check{font-size:44px;}
+  .success-box h2{margin:10px 0 6px;font-size:18px;}
+  .success-box p{color:var(--sub);font-size:13.5px;margin:0 0 18px;}
+  .link-btn{
+    background:none;
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:10px 16px;
+    font-size:14px;
+    color:var(--ink);
+    cursor:pointer;
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>📋 Tilføj en opgave</h1>
+    <p>Send en opgave direkte til "Kommende opgaver" - ingen installation eller login nødvendig.</p>
+  </div>
+  <div class="wrap">
+    <div class="card" id="form-card">
+      <div id="no-code-msg" class="msg err" style="display:none;">
+        Dette link mangler en forbindelseskode og kan ikke bruges. Bed om et
+        nyt link/QR-kode fra den, der oprettede det.
+      </div>
+      <form id="task-form">
+        <label for="f-title">Titel <span class="required">*</span></label>
+        <input type="text" id="f-title" autocomplete="off" maxlength="200" required>
+
+        <label for="f-desc">Beskrivelse (valgfri)</label>
+        <textarea id="f-desc" maxlength="2000"></textarea>
+
+        <label for="f-name">Dit navn (valgfri, så vi ved hvem vi kan spørge)</label>
+        <input type="text" id="f-name" autocomplete="off" maxlength="100">
+
+        <button type="submit" class="btn" id="submit-btn">Send opgave</button>
+        <div class="msg" id="form-msg"></div>
+      </form>
+    </div>
+    <div class="success-box" id="success-box">
+      <div class="check">✅</div>
+      <h2>Opgaven er sendt</h2>
+      <p>Den dukker nu op under "Kommende opgaver" i appen.</p>
+      <button class="link-btn" id="send-another-btn" type="button">Send en opgave til</button>
+    </div>
+  </div>
+
+<script>
+  var SYNC_API = "/api/sync";
+  var params = new URLSearchParams(location.search);
+  var syncCode = (params.get("kode") || "").trim();
+
+  var formCard = document.getElementById("form-card");
+  var noCodeMsg = document.getElementById("no-code-msg");
+  var form = document.getElementById("task-form");
+  var submitBtn = document.getElementById("submit-btn");
+  var formMsg = document.getElementById("form-msg");
+  var successBox = document.getElementById("success-box");
+
+  if (!syncCode) {
+    noCodeMsg.style.display = "block";
+    form.style.display = "none";
+  }
+
+  function showMsg(text, kind) {
+    formMsg.textContent = text;
+    formMsg.className = "msg show " + kind;
+  }
+
+  // Samme "hent nyeste, læg sammen, gem" mønster som resten af appen bruger
+  // (se index.html: fetchWithEtag/putWithEtag/safeMergePush) - så en opgave
+  // sendt herfra ikke ved et uheld overskriver noget, en anden enhed (eller
+  // en anden ekstern indsendelse) lige har gemt.
+  async function fetchWithEtag(key) {
+    try {
+      var res = await fetch(SYNC_API + "/" + syncCode + "/" + key);
+      if (res.status === 404) return { data: null, etag: "" };
+      if (!res.ok) return null;
+      var etag = res.headers.get("X-Dlh-Version") || "";
+      var data = await res.json();
+      return { data: data, etag: etag };
+    } catch (e) { return null; }
+  }
+
+  async function putWithEtag(key, dataObj, etag) {
+    try {
+      var res = await fetch(SYNC_API + "/" + syncCode + "/" + key, {
+        method: "PUT",
+        headers: { "X-Dlh-If-Version": etag || "__new__" },
+        body: JSON.stringify(dataObj)
+      });
+      if (res.status === 409) return { status: "conflict" };
+      if (!res.ok) return { status: "error" };
+      return { status: "ok" };
+    } catch (e) { return { status: "error" }; }
+  }
+
+  function mergeUpcoming(a, b) {
+    var map = {};
+    (a || []).forEach(function (t) { map[t.id] = t; });
+    (b || []).forEach(function (t) {
+      var existing = map[t.id];
+      if (!existing || new Date(t.updatedAt) > new Date(existing.updatedAt)) map[t.id] = t;
+    });
+    return Object.keys(map).map(function (k) { return map[k]; });
+  }
+
+  async function submitTask(entry) {
+    for (var attempt = 0; attempt < 6; attempt++) {
+      var remote = await fetchWithEtag("upcoming");
+      if (remote === null) return false; // netværksfejl
+      var merged = mergeUpcoming(remote.data === null ? [] : remote.data, [entry]);
+      var result = await putWithEtag("upcoming", merged, remote.etag);
+      if (result.status === "ok") return true;
+      if (result.status === "conflict") continue; // en anden gemte imellem - prøv igen med frisk data
+      return false; // rigtig fejl
+    }
+    return false;
+  }
+
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    var title = document.getElementById("f-title").value.trim();
+    if (!title) return;
+    var desc = document.getElementById("f-desc").value.trim();
+    var name = document.getElementById("f-name").value.trim();
+
+    var noteParts = [];
+    if (desc) noteParts.push(desc);
+    noteParts.push("📱 Indsendt via QR-kode" + (name ? " af " + name : ""));
+
+    var now = new Date().toISOString();
+    var entry = {
+      id: "u" + Date.now() + Math.random().toString(36).slice(2, 8),
+      title: title,
+      note: noteParts.join("\n\n"),
+      dueDate: "",
+      createdAt: now,
+      updatedAt: now,
+      deleted: false
+    };
+
+    submitBtn.disabled = true;
+    formMsg.className = "msg";
+    try {
+      var ok = await submitTask(entry);
+      if (ok) {
+        formCard.style.display = "none";
+        successBox.classList.add("show");
+      } else {
+        showMsg("Kunne ikke sende opgaven - tjek internetforbindelsen og prøv igen.", "err");
+      }
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  document.getElementById("send-another-btn").addEventListener("click", function () {
+    form.reset();
+    successBox.classList.remove("show");
+    formCard.style.display = "block";
+    formMsg.className = "msg";
+  });
+</script>
+</body>
+</html>

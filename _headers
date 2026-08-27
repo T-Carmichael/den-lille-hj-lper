@@ -6,3 +6,6 @@
 
 /admin-restore.html
   Cache-Control: no-cache, no-store, must-revalidate
+
+/tilfoej-opgave.html
+  Cache-Control: no-cache, no-store, must-revalidate
