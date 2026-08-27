@@ -1990,10 +1990,10 @@
         if (window.__dlhRefreshHistory) window.__dlhRefreshHistory();
         // Kommende opgaver hentes HER (ikke kun i Opgaveoverblik-fanens egen
         // baggrunds-opdatering), så en notifikation om en QR-indsendt
-        // opgave virker uanset hvilken fane man aktivt sidder på.
-        if (window.__dlhRefreshUpcoming) {
-          window.__dlhRefreshUpcoming().then(checkForNewExternalTasks);
-        }
+        // opgave virker uanset hvilken fane man aktivt sidder på. Selve
+        // notifikations-tjekket sker inde i __dlhRefreshUpcoming selv, ikke
+        // her - se dér.
+        if (window.__dlhRefreshUpcoming) window.__dlhRefreshUpcoming();
       }, 20000);
     }
 
@@ -2045,8 +2045,7 @@
     pullBtn.addEventListener("click", async function () {
       await pullState(true);
       await window.__dlhRefreshHistory();
-      var freshUpcoming = await window.__dlhRefreshUpcoming();
-      checkForNewExternalTasks(freshUpcoming);
+      await window.__dlhRefreshUpcoming();
     });
 
     copyBtn.addEventListener("click", async function () {
@@ -3034,6 +3033,18 @@
         var merged = mergeUpcoming(local, remote);
         saveUpcomingLocal(merged);
         await pushUpcoming(merged);
+        // Tjekket for nye QR-indsendte opgaver (til 🔔-notifikationer) sker
+        // HER, INDE i selve hentefunktionen - bevidst IKKE ved at kalde det
+        // separat fra hvert enkelt sted i appen, der henter kommende
+        // opgaver. Der er flere af dem (sync-IIFE'ens baggrunds-poll,
+        // "Hent nyeste"-knappen, Opgaveoverblik-fanens egen opdatering og
+        // dens egen baggrunds-poll) - at kalde tjekket manuelt hvert sted er
+        // netop det, der gjorde, at notifikationer virkede fra ét sted, men
+        // ikke et andet, første gang funktionen blev bygget. Ved at lægge
+        // det her i stedet, får ETHVERT sted, der nogensinde kalder denne
+        // funktion (også fremtidige), automatisk gavn af det - umuligt at
+        // glemme et sted igen.
+        if (window.__dlhCheckForNewExternalTasks) window.__dlhCheckForNewExternalTasks(merged);
         return merged;
       } catch (e) {
         return local;
@@ -4595,7 +4606,6 @@
       // selve overblikket, indtil et helt ANDET tilfældigt render (fx en
       // senere historik-opdatering) tilfældigvis fangede det.
       if(freshUpcoming){ renderUpcoming(); renderList(); }
-      if(freshUpcoming && window.__dlhCheckForNewExternalTasks) window.__dlhCheckForNewExternalTasks(freshUpcoming);
       setOvSyncStatus(connected ? "✓ Opdateret " + nowClock() : "");
     };
 
@@ -4614,7 +4624,6 @@
         if(freshHistory){ renderList(); renderGenRepLocations(); }
         var freshUpcoming = await window.__dlhRefreshUpcoming();
         if(freshUpcoming){ renderUpcoming(); renderList(); }
-        if(freshUpcoming && window.__dlhCheckForNewExternalTasks) window.__dlhCheckForNewExternalTasks(freshUpcoming);
         setOvSyncStatus(connected ? "✓ Opdateret " + nowClock() : "");
       } catch (e) {} // baggrunds-opdatering må aldrig kunne vise en fejl - prøver bare igen om 20 sek.
     }, 20000);

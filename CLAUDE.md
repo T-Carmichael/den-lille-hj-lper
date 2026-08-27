@@ -618,31 +618,28 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
       man selv tilføjer i "Kommende opgaver" eller på en anden enhed -
       kendes på teksten "📱 Indsendt via QR-kode" i opgavens note (samme
       tekst, `tilfoej-opgave.html` altid sætter).
-    - **Al hentning af "kommende opgaver" sker nu også i selve sync-
-      IIFE'ens universelle 20-sekunders baggrunds-poll** (`startPolling`),
-      ikke kun i Opgaveoverblik-fanens egen, separate poll (som kun kører,
-      hvis man rent faktisk har åbnet den fane mindst én gang) - ellers
-      ville en notifikation kun dukke op, hvis man tilfældigvis sad på
-      netop Opgaveoverblik-fanen, i stedet for fx den langt mere
-      sandsynlige Rapport-fane.
-      **Rettet (samme dag) - manglede stadig, når man rent faktisk SAD på
-      Opgaveoverblik-fanen**: selve tjek-funktionen (`checkForNewExternalTasks`)
-      blev kun kaldt ét sted (`startPolling`), ikke i Opgaveoverblik-fanens
-      EGEN opdatering (`__dlhRenderOverview`, kaldt ved fane-skift, samt dens
-      egen 20-sekunders `setInterval`) - selvom BEGGE veje henter kommende
-      opgaver via samme `__dlhRefreshUpcoming()`. En ny QR-opgave dukkede
-      derfor korrekt op i selve listen (det er en helt separat kode-sti),
-      men ingen notifikation blev vist, hvis man sad på netop den fane, når
-      den ankom. Rettet ved at eksportere funktionen
-      (`window.__dlhCheckForNewExternalTasks`) og kalde den fra alle fire
-      steder, der henter kommende opgaver (`startPolling`, "Hent nyeste"-
-      knappen, `__dlhRenderOverview`, og dens egen baggrunds-poll) - undtagen
-      selve `connectWithCode` (en NY forbindelse skal ikke give en bølge af
-      notifikationer for opgaver, der allerede lå der, før enheden
-      overhovedet var forbundet). Fundet af brugeren, der testede med appen
-      åben på netop Opgaveoverblik-fanen - genskabt i test ved at simulere
-      præcis det forløb (skifte til fanen, mens en ny ekstern opgave dukker
-      op på "serveren").
+    - **Selve tjekket for nye QR-opgaver sker INDE I `__dlhRefreshUpcoming`
+      selv**, ikke ved at kalde det separat fra hvert sted i appen, der
+      henter kommende opgaver. Der er flere steder, der henter kommende
+      opgaver (sync-IIFE'ens universelle 20-sekunders baggrunds-poll,
+      "Hent nyeste"-knappen, Opgaveoverblik-fanens egen opdatering ved
+      fane-skift, og DENS egen 20-sekunders baggrunds-poll) - første udgave
+      kaldte tjek-funktionen manuelt fra kun ét af dem (`startPolling`), så
+      en ny QR-opgave dukkede korrekt op i selve listen (en helt separat
+      kode-sti), men ingen notifikation blev vist, hvis man sad på netop
+      Opgaveoverblik-fanen, når den ankom - fundet af brugeren ved rigtig
+      test på egen telefon. Rettet ved at lægge selve tjekket ind i
+      `__dlhRefreshUpcoming` (eksponeret via `window.__dlhCheckForNewExternalTasks`,
+      kaldt fra funktionens egen krop) i stedet for at forsøge at huske at
+      kalde det manuelt hvert sted - ethvert sted, der nogensinde kalder
+      denne funktion (også fremtidige tilføjelser), får nu automatisk gavn
+      af det. Eneste bevidste undtagelse er selve `connectWithCode` (en NY
+      forbindelse må gerne give en notifikation for allerede-eksisterende,
+      endnu ikke sete eksterne opgaver på den kode - det er ikke forkert,
+      bare en naturlig konsekvens af "denne enhed har ikke set dem før").
+      Genskabt og bekræftet rettet i test ved at simulere præcis brugerens
+      forløb (sidde på Opgaveoverblik-fanen, mens en ny ekstern opgave
+      ankommer på "serveren").
     - **Undgår en "bølge" af notifikationer for gamle opgaver**, når
       funktionen slås til første gang: alt, der allerede ligger i
       "Kommende opgaver" i det øjeblik man trykker knappen, markeres som
@@ -701,6 +698,20 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   den indlejrede rapport-HTML.
 - Ingen build/test-kommandoer findes. "Test" = åbn `index.html` i en browser,
   eller kør `npx serve .` og tjek visuelt.
+- **Nye funktioner skal have deres kode testet grundigt, FØR de meldes
+  klar/pushes** - ikke kun "det ser rigtigt ud", men en rigtig, automatiseret
+  test (fx via Playwright), der genskaber den faktiske brugssituation.
+  Erfaring fra denne app: en fejl opstod, fordi en ny funktion (QR-
+  notifikationer) blev testet grundigt ÉT sted i koden, men kun brugt
+  manuelt/kaldt fra ÉT ud af flere steder, der reelt havde brug for den -
+  testen fangede derfor ikke, at et andet, lige så almindeligt brugt sted
+  manglede samme kobling. Lærdom: (1) find ALLE steder i koden, der kalder
+  den samme underliggende funktion (fx via en søgning), før en ny
+  sidefunktion (som notifikationer) kobles på - og overvej at lægge den
+  logik INDE I selve den delte funktion i stedet for at kalde den manuelt
+  hvert sted (umuligt at glemme et sted, hvis der kun er ét sted at kalde
+  den fra), (2) test mere end den ene kode-sti, der lige blev bygget/rørt -
+  test også andre, allerede-eksisterende veje ind til samme resultat.
 - Undgå at ændre selve rapport-formularens felter/beregninger uden at blive
   bedt om det specifikt — det er et rigtigt arbejdsredskab.
 - **Redigering af `REPORT_HTML` (den indlejrede rapport-HTML)**: filen er én
