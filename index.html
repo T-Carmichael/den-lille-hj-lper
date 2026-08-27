@@ -2428,20 +2428,36 @@
     // hvis en anden enhed, der endnu ikke har hørt om sletningen, lægger sin
     // (ældre) lokale kopi sammen med serverens igen (samme princip som andre
     // steder i appen, fx "kommende opgaver" og depotrum).
+    // Finder et punkt med et bestemt id blandt ALLE dage med en given dato -
+    // ikke kun den FØRSTE. To dage med samme dato-streng kan forekomme i
+    // historikken (fx rester fra ældre data, fra før sammenlægning
+    // konsekvent lagde dage med samme dato sammen til én) - uden dette ville
+    // et opslag, der rammer den "forkerte" (tomme) dag først, se ud til
+    // slet ikke at gøre noget: hverken slette eller ændre status, uden
+    // nogen fejl - meget forvirrende at fejlsøge på afstand. Returnerer
+    // { day: <dag-objektet>, idx: <indeks i day.items> } eller null.
+    function findHistoryItemByDate(history, date, itemId) {
+      var daysWithDate = history.filter(function (d) { return d.date === date; });
+      for (var i = 0; i < daysWithDate.length; i++) {
+        var day = daysWithDate[i];
+        var idx = (day.items || []).findIndex(function (it) { return it.id === itemId; });
+        if (idx !== -1) return { day: day, idx: idx };
+      }
+      return null;
+    }
+
     window.__dlhDeleteHistoryItem = async function (date, itemId) {
       if (!itemId) return;
       var history = loadHistoryLocal();
-      var day = history.filter(function (d) { return d.date === date; })[0];
-      if (!day || !day.items) return;
-      var idx = day.items.findIndex(function (it) { return it.id === itemId; });
-      if (idx === -1) return;
+      var found = findHistoryItemByDate(history, date, itemId);
+      if (!found) return;
       var now = new Date().toISOString();
       // Tombstonen får sit EGET updatedAt (se mergeHistoryItems) - ellers
       // kunne en urørt, gammel kopi af punktet (fx stadig liggende i en
       // andens åbne rapport-formular, genlogget ved en helt urelateret
       // gemning) overskrive sletningen igen ved næste synkronisering.
-      day.items[idx] = { id: itemId, deleted: true, updatedAt: now };
-      day.savedAt = now;
+      found.day.items[found.idx] = { id: itemId, deleted: true, updatedAt: now };
+      found.day.savedAt = now;
       history = saveHistoryLocal(history);
       if (syncCode) await pushHistory(history);
       await removeItemFromOpenReport(itemId);
@@ -2517,19 +2533,17 @@
     window.__dlhSetHistoryItemStatus = async function (date, itemId, status) {
       if (!itemId) return;
       var history = loadHistoryLocal();
-      var day = history.filter(function (d) { return d.date === date; })[0];
-      if (!day || !day.items) return;
-      var idx = day.items.findIndex(function (it) { return it.id === itemId; });
-      if (idx === -1) return;
+      var found = findHistoryItemByDate(history, date, itemId);
+      if (!found) return;
       var now = new Date().toISOString();
-      day.items[idx].status = status;
+      found.day.items[found.idx].status = status;
       // Stemples pr. punkt (ikke kun day.savedAt) - se mergeHistoryItems: det
       // er det, der lader denne statusændring "vinde" ved sammenlægning,
       // selvom rapport-formularen for samme dato bliver gemt igen senere med
       // punktets gamle status (fordi selve formularen ikke ved, at status
       // lige er ændret herfra).
-      day.items[idx].updatedAt = now;
-      day.savedAt = now;
+      found.day.items[found.idx].updatedAt = now;
+      found.day.savedAt = now;
       history = saveHistoryLocal(history);
       if (syncCode) await pushHistory(history);
       if (status === "OK") await removeItemFromOpenReport(itemId);

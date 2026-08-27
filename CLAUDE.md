@@ -118,6 +118,22 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     `serializeState`/`deserializeState`). Ældre punkter uden id migreres
     automatisk (`window.__dlhMigrateHistoryItemIds`, kaldt af
     `__dlhRenderOverview` FØR noget sammenlægges).
+  - **Opslag på "dagen med denne dato" leder på tværs af ALLE dage med den
+    dato, ikke kun den første** (`findHistoryItemByDate`, brugt af både
+    `__dlhDeleteHistoryItem` og `__dlhSetHistoryItemStatus`). Rettet fordi
+    to selvstændige dag-objekter med SAMME dato-streng kan forekomme i en
+    brugers historik (rester fra ældre data/hændelser, fra før al
+    sammenlægning konsekvent lagde dage med samme dato sammen til én -
+    `mergeHistory` forhindrer NYE dubletter i at opstå under selve
+    sammenlægningen, men rydder ikke allerede-eksisterende op). Uden denne
+    rettelse brugte `.filter(d => d.date === dato)[0]` kun den FØRSTE af de
+    to dage - hvis punktet, man ville slette/ændre, i virkeligheden lå i
+    den ANDEN, fandt opslaget det aldrig, og knappen så ud til slet ikke at
+    gøre noget (intet synligt sker, ingen fejl) - meldt af brugeren som
+    "kan ikke slette en opgave efter jeg har ændret status til udført".
+    Kunne ikke genskabes med normale, "rene" testscenarier - kun ved
+    bevidst at seede to dag-objekter med samme dato, hvilket bekræftede
+    hypotesen (samme symptom, punktet forblev fuldstændig urørt).
   - **Sammenlægning af historik sker punkt for punkt, ikke hel dag ad
     gangen** (`mergeHistory`/`mergeHistoryItems`) - et punkt, der kun
     findes hos den ene part, bevares altid. Punkter uden rigtigt id (fra
