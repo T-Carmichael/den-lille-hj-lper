@@ -534,6 +534,31 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   - Der har tidligere også ligget en simplere "Depotrum – inventar"-liste
     (vare/antal/lav-lager-advarsel) inde i Opgaveoverblik-fanen — den er
     fjernet igen, da Optælling-fanen dækker behovet.
+  - **"👁 Del visning (kun læsning)"-knap** i selve Optælling-fanen: viser
+    samme link/QR-kode-boks som "📱 QR-kode" (genbruger den, se
+    `window.__dlhShowLinkModal` nedenfor), men peger på en ny, separat side,
+    `se-optaelling.html?kode=<koden>`. Lavet til at kunne dele
+    inventarlisten med fx ledelsen, uden de skal installere appen, have
+    adgangskoden 8961, eller kunne risikere at ændre noget ved et uheld.
+    - **Fuldstændig skrivebeskyttet** - siden henter kun `rum` og
+      `optaelling` direkte (samme GET-endpoints som appen selv bruger,
+      ingen ændringer nødvendige i `sync.js`), og har INGEN knapper til at
+      tilføje/redigere/slette noget - kun et søgefelt (søger på tværs af
+      alle rum, viser hvilket rum en match ligger i - samme idé som appens
+      eget søgefelt) og en "🔄 Opdater"-knap.
+    - Viser rum som selvstændige, stablede sektioner (ikke faneblade som i
+      selve appen) - mere velegnet til at scrolle/få et overblik på en
+      side, som en ekstern seer typisk vil.
+    - Egen, lettere lys-tema-side (samme stil som `tilfoej-opgave.html`),
+      ikke appens mørke tema - matcher det etablerede mønster for
+      selvstændige sider til folk uden appen.
+    - **QR-modalen ("📱 QR-kode" og "👁 Del visning") er nu én genbrugelig
+      komponent** (`window.__dlhShowLinkModal(titel, beskrivelse, link)`,
+      kaldt fra begge steder), i stedet for to næsten-ens modaler - samme
+      QR-tegning, samme "Kopiér link"-knap (ny, var der ikke tidligere på
+      QR-opgave-modalen), samme luk-adfærd begge steder.
+    - `_headers` opdateret med samme no-cache-regel som de andre
+      selvstændige sider.
 - **Faste opgaver-fane** (fjerde fane): et simpelt, selvstændigt ugentligt
   overblik over faste, tilbagevendende opgaver og hvem af de 4-5
   medarbejdere der er ansvarlig lige nu — grupperet under de 7 ugedage

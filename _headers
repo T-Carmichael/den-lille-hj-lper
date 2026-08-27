@@ -9,3 +9,6 @@
 
 /tilfoej-opgave.html
   Cache-Control: no-cache, no-store, must-revalidate
+
+/se-optaelling.html
+  Cache-Control: no-cache, no-store, must-revalidate

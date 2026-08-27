@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Optælling - Den lille hjælper</title>
+<style>
+  :root{
+    --navy:#16293C;
+    --navy-2:#20374D;
+    --paper:#F6F5F1;
+    --card:#FFFFFF;
+    --ink:#1B2126;
+    --sub:#5C6670;
+    --line:#DCD7CC;
+    --err:#B6431E;
+    --err-bg:#FBEAE2;
+    --amber:#D89A2C;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;
+  }
+  .topbar{
+    background:var(--navy);
+    color:#fff;
+    padding:22px 16px 20px;
+    border-bottom:5px solid var(--amber);
+    position:sticky;
+    top:0;
+    z-index:5;
+  }
+  .topbar h1{margin:0;font-size:19px;}
+  .topbar p{margin:6px 0 0;font-size:13px;color:#C9D2DA;line-height:1.4;}
+  .topbar .badge{
+    display:inline-block;
+    margin-top:8px;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    background:rgba(255,255,255,0.12);
+    padding:3px 9px;
+    border-radius:20px;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:16px 16px 60px;}
+  .toolbar{display:flex;gap:8px;margin-bottom:14px;}
+  .toolbar input{
+    flex:1 1 auto;
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:10px 12px;
+    font-size:15px;
+    font-family:inherit;
+    background:#fff;
+    color:var(--ink);
+  }
+  .toolbar button{
+    flex:0 0 auto;
+    border:1px solid var(--line);
+    background:#fff;
+    border-radius:9px;
+    padding:10px 14px;
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--ink);
+    cursor:pointer;
+  }
+  .toolbar button:disabled{opacity:.5;cursor:default;}
+  .msg{
+    padding:14px 16px;
+    border-radius:10px;
+    font-size:13.5px;
+    line-height:1.5;
+    margin-bottom:14px;
+  }
+  .msg.err{background:var(--err-bg);color:var(--err);}
+  .msg.info{background:var(--card);border:1px solid var(--line);color:var(--sub);}
+  .room{margin-bottom:22px;}
+  .room-head{
+    font-family:"Sora",sans-serif;
+    font-weight:700;
+    font-size:15px;
+    margin:0 0 8px;
+    padding-bottom:6px;
+    border-bottom:2px solid var(--line);
+  }
+  .item{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:9px 12px;
+    margin-bottom:8px;
+  }
+  .item-img{width:48px;height:48px;border-radius:10px;object-fit:cover;flex:0 0 auto;background:var(--paper);}
+  .item-noimg{
+    width:48px;height:48px;border-radius:10px;flex:0 0 auto;
+    background:var(--paper);
+    display:flex;align-items:center;justify-content:center;
+    font-size:20px;
+  }
+  .item-name{font-size:14px;font-weight:600;}
+  .item-room-tag{font-size:11px;color:var(--sub);margin-top:2px;}
+  .item-qty{
+    margin-left:auto;
+    flex:0 0 auto;
+    font-size:15px;
+    font-weight:700;
+    color:var(--navy);
+    background:var(--paper);
+    padding:4px 11px;
+    border-radius:20px;
+  }
+  .empty{color:var(--sub);font-size:13.5px;padding:20px 4px;text-align:center;}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>📦 Optælling</h1>
+    <p>Inventarliste - kun til visning, intet kan ændres herfra.</p>
+    <span class="badge" id="status-badge">Henter...</span>
+  </div>
+  <div class="wrap">
+    <div id="no-code-msg" class="msg err" style="display:none;">
+      Dette link mangler en forbindelseskode og kan ikke bruges. Bed om et
+      nyt link/QR-kode fra den, der oprettede det.
+    </div>
+    <div id="content" style="display:none;">
+      <div class="toolbar">
+        <input type="text" id="search" placeholder="🔍 Søg efter en ting...">
+        <button type="button" id="refresh-btn">🔄 Opdater</button>
+      </div>
+      <div id="rooms"></div>
+    </div>
+  </div>
+
+<script>
+  var SYNC_API = "/api/sync";
+  var params = new URLSearchParams(location.search);
+  var syncCode = (params.get("kode") || "").trim();
+
+  var noCodeMsg = document.getElementById("no-code-msg");
+  var content = document.getElementById("content");
+  var statusBadge = document.getElementById("status-badge");
+  var roomsEl = document.getElementById("rooms");
+  var searchEl = document.getElementById("search");
+  var refreshBtn = document.getElementById("refresh-btn");
+
+  var rooms = [];
+  var items = [];
+
+  if (!syncCode) {
+    noCodeMsg.style.display = "block";
+    statusBadge.style.display = "none";
+  }
+
+  function esc(s) {
+    var d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  }
+
+  async function fetchKey(key) {
+    try {
+      var res = await fetch(SYNC_API + "/" + syncCode + "/" + key);
+      if (res.status === 404) return [];
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) { return null; }
+  }
+
+  function itemHtml(item, showRoomTag) {
+    var roomName = showRoomTag ? (rooms.filter(function (r) { return r.id === item.roomId; })[0] || {}).name : null;
+    return '<div class="item">' +
+      (item.image
+        ? '<img class="item-img" src="' + esc(item.image) + '" alt="">'
+        : '<div class="item-noimg">📦</div>') +
+      '<div><div class="item-name">' + esc(item.name || "Uden navn") + '</div>' +
+      (showRoomTag && roomName ? '<div class="item-room-tag">' + esc(roomName) + '</div>' : '') +
+      '</div>' +
+      '<span class="item-qty">' + esc(item.qty != null ? item.qty : 0) + '</span>' +
+      '</div>';
+  }
+
+  function render() {
+    var term = searchEl.value.toLowerCase().trim();
+
+    if (term) {
+      var matches = items.filter(function (it) { return (it.name || "").toLowerCase().indexOf(term) !== -1; });
+      roomsEl.innerHTML = matches.length
+        ? '<div class="room"><div class="room-head">Søgeresultater</div>' + matches.map(function (it) { return itemHtml(it, true); }).join("") + '</div>'
+        : '<div class="empty">Ingen ting matcher søgningen.</div>';
+      return;
+    }
+
+    if (rooms.length === 0) {
+      roomsEl.innerHTML = '<div class="empty">Ingen depotrum oprettet endnu.</div>';
+      return;
+    }
+
+    var html = "";
+    rooms.forEach(function (room) {
+      var roomItems = items.filter(function (it) { return it.roomId === room.id; });
+      html += '<div class="room">' +
+        '<div class="room-head">' + esc(room.name) + ' <span style="color:var(--sub);font-weight:400;">(' + roomItems.length + ')</span></div>' +
+        (roomItems.length
+          ? roomItems.map(function (it) { return itemHtml(it, false); }).join("")
+          : '<div class="empty">Ingen ting talt op i dette rum endnu.</div>') +
+        '</div>';
+    });
+    roomsEl.innerHTML = html;
+  }
+
+  async function loadAll() {
+    refreshBtn.disabled = true;
+    statusBadge.textContent = "Henter...";
+    var roomsData = await fetchKey("rum");
+    var itemsData = await fetchKey("optaelling");
+    if (roomsData === null || itemsData === null) {
+      statusBadge.textContent = "Kunne ikke hente data";
+      refreshBtn.disabled = false;
+      return;
+    }
+    rooms = (roomsData || []).filter(function (r) { return !r.deleted; })
+      .sort(function (a, b) { return (a.createdAt || "").localeCompare(b.createdAt || ""); });
+    items = (itemsData || []).filter(function (it) { return !it.deleted; });
+    statusBadge.textContent = "Opdateret " + new Date().toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
+    refreshBtn.disabled = false;
+    render();
+  }
+
+  if (syncCode) {
+    content.style.display = "block";
+    searchEl.addEventListener("input", render);
+    refreshBtn.addEventListener("click", loadAll);
+    loadAll();
+  }
+</script>
+</body>
+</html>

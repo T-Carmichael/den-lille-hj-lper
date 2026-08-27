@@ -319,6 +319,7 @@
   }
   .qr-modal-close{
     margin-top:14px;
+    margin-left:6px;
     background:var(--glass-strong);
     border:1px solid var(--line);
     color:var(--ink);
@@ -329,6 +330,7 @@
     border-radius:10px;
     cursor:pointer;
   }
+  .qr-modal-close:first-of-type{margin-left:0;}
 
   /* ---------- overview panel ---------- */
   #panel-overview{overflow-y:auto;}
@@ -992,11 +994,12 @@
 
   <div class="qr-modal-backdrop" id="qr-modal-backdrop" style="display:none;">
     <div class="qr-modal">
-      <h3>Tilføj en opgave via QR-kode</h3>
-      <p>Andre kan scanne koden med deres mobilkamera for at sende en opgave direkte ind i "Kommende opgaver" - uden at skulle installere eller logge ind på noget.</p>
+      <h3 id="qr-modal-title">Tilføj en opgave via QR-kode</h3>
+      <p id="qr-modal-desc">Andre kan scanne koden med deres mobilkamera for at sende en opgave direkte ind i "Kommende opgaver" - uden at skulle installere eller logge ind på noget.</p>
       <canvas id="qr-canvas"></canvas>
       <span class="qr-modal-link" id="qr-modal-link"></span>
       <br>
+      <button class="qr-modal-close" id="qr-modal-copy" type="button">Kopiér link</button>
       <button class="qr-modal-close" id="qr-modal-close" type="button">Luk</button>
     </div>
   </div>
@@ -2070,15 +2073,43 @@
     // Viser en QR-kode, der peger på tilfoej-opgave.html med den aktuelle
     // forbindelseskode i URL'en - eksterne kan scanne den og sende en
     // opgave direkte ind i "Kommende opgaver", uden at åbne selve appen.
-    qrBtn.addEventListener("click", function () {
-      if (!syncCode) return;
-      var link = location.origin + "/tilfoej-opgave.html?kode=" + encodeURIComponent(syncCode);
+    var qrModalTitle = document.getElementById("qr-modal-title");
+    var qrModalDesc = document.getElementById("qr-modal-desc");
+    var qrModalCopy = document.getElementById("qr-modal-copy");
+
+    // Genbrugelig modal til "her er et link/QR-kode til en anden side" -
+    // bruges både af "📱 QR-kode" (tilføj opgave) og "👁 Del visning"
+    // (Optælling-fanen, se dens egen IIFE), så begge deler samme kode i
+    // stedet for to næsten-ens modaler.
+    window.__dlhShowLinkModal = function (title, desc, link) {
       try {
+        qrModalTitle.textContent = title;
+        qrModalDesc.textContent = desc;
         renderQrToCanvas(document.getElementById("qr-canvas"), link, 6, 3);
         qrModalLink.textContent = link;
         qrModalBackdrop.style.display = "flex";
       } catch (e) {
         setStatus("Kunne ikke lave QR-kode");
+      }
+    };
+
+    qrBtn.addEventListener("click", function () {
+      if (!syncCode) return;
+      var link = location.origin + "/tilfoej-opgave.html?kode=" + encodeURIComponent(syncCode);
+      window.__dlhShowLinkModal(
+        "Tilføj en opgave via QR-kode",
+        'Andre kan scanne koden med deres mobilkamera for at sende en opgave direkte ind i "Kommende opgaver" - uden at skulle installere eller logge ind på noget.',
+        link
+      );
+    });
+    qrModalCopy.addEventListener("click", async function () {
+      try {
+        await navigator.clipboard.writeText(qrModalLink.textContent);
+        var original = qrModalCopy.textContent;
+        qrModalCopy.textContent = "✓ Kopieret";
+        setTimeout(function () { qrModalCopy.textContent = original; }, 1600);
+      } catch (e) {
+        prompt("Kopiér linket manuelt:", qrModalLink.textContent);
       }
     });
     notifyBtn.addEventListener("click", async function () {
@@ -3710,6 +3741,7 @@
             '<span class="cnt-count" id="cnt-summary"></span>' +
           '</div>' +
           '<p class="cnt-hint">Opret et rum for hvert fysiske depotrum, og tæl de ting op, der er i det — navn, antal og gerne et billede.</p>' +
+          '<button class="sync-btn" id="cnt-share-btn" type="button" style="margin-bottom:12px;">👁 Del visning (kun læsning)</button>' +
           '<div class="cnt-search-bar">' +
             '<input type="text" id="cnt-search" placeholder="🔍 Søg efter en ting i alle rum...">' +
           '</div>' +
@@ -3778,6 +3810,19 @@
       });
 
       panel.addEventListener("click", async function(e){
+        if(e.target.closest("#cnt-share-btn")){
+          var code = localStorage.getItem("dlh-sync-code") || "";
+          if(!code){ alert("Opret eller indsæt en forbindelseskode i Rapport-fanen først - visningen deler den samme kode."); return; }
+          var link = location.origin + "/se-optaelling.html?kode=" + encodeURIComponent(code);
+          if(window.__dlhShowLinkModal){
+            window.__dlhShowLinkModal(
+              "Del optælling (kun læsning)",
+              "Andre (fx ledelsen) kan åbne linket eller scanne koden for at se inventarlisten - uden at kunne ændre noget, og uden at skulle installere appen.",
+              link
+            );
+          }
+          return;
+        }
         if(e.target.closest("#cnt-room-add-btn")){
           var f = document.getElementById("cnt-room-new");
           f.style.display = "flex";
