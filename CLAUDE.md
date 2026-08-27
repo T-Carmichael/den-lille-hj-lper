@@ -603,6 +603,40 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     tegner, er screenshottet og afkodet med en rigtig, uafhængig
     QR-scanner (Python `pyzbar`), som bekræftede at den dekoder til
     nøjagtig det forventede link.
+  - **"🔔 Notifikationer"-knap** i den forbundne synk-linje (ved siden af
+    "📱 QR-kode"): beder om tilladelse til almindelige browser-
+    notifikationer (`Notification`-API'et), og viser én, hver gang en NY
+    opgave, indsendt via QR-koden, dukker op i "Kommende opgaver" - mens
+    appen/fanen er åben (også minimeret/i baggrunden på telefonen).
+    **Virker IKKE, hvis appen er helt lukket/ikke kører** - det ville
+    kræve en "rigtig" push-notifikation (service worker + VAPID-nøgler +
+    en serverdel, der selv kan sende signerede beskeder ud), som er en
+    større, separat opgave - bevidst fravalgt indtil videre (brugeren
+    valgte selv den simplere udgave, da begge blev præsenteret som
+    mulighed).
+    - **Kun QR-indsendte opgaver udløser en notifikation**, ikke opgaver
+      man selv tilføjer i "Kommende opgaver" eller på en anden enhed -
+      kendes på teksten "📱 Indsendt via QR-kode" i opgavens note (samme
+      tekst, `tilfoej-opgave.html` altid sætter).
+    - **Al hentning af "kommende opgaver" sker nu også i selve sync-
+      IIFE'ens universelle 20-sekunders baggrunds-poll** (`startPolling`),
+      ikke kun i Opgaveoverblik-fanens egen, separate poll (som kun kører,
+      hvis man rent faktisk har åbnet den fane mindst én gang) - ellers
+      ville en notifikation kun dukke op, hvis man tilfældigvis sad på
+      netop Opgaveoverblik-fanen, i stedet for fx den langt mere
+      sandsynlige Rapport-fane.
+    - **Undgår en "bølge" af notifikationer for gamle opgaver**, når
+      funktionen slås til første gang: alt, der allerede ligger i
+      "Kommende opgaver" i det øjeblik man trykker knappen, markeres som
+      "allerede set" (`dlh-notify-seen-ids` i `localStorage`) - kun
+      opgaver, der dukker op DEREFTER, kan udløse en notifikation.
+    - Tjekker `Notification.permission === "denied"` og viser en tydelig
+      forklaring, hvis notifikationer er blokeret i selve browseren/
+      telefonens indstillinger (kan ikke selv "genåbne" den slags - kun
+      brugeren kan, uden for appen).
+    - Testet grundigt: nye QR-opgaver udløser korrekt én notifikation
+      hver, allerede-sete/ikke-QR-opgaver udløser ingen, og tilstanden
+      (til/fra) består efter en genindlæsning.
   - **"▶ Sæt i gang"-knap** på hvert punkt i "Kommende opgaver" (Opgave-
     overblik-fanen) — virker på alle kommende opgaver, ikke kun dem fra
     QR-koden. Flytter punktet ind i den ÅBNE Rapport-formular som et nyt,

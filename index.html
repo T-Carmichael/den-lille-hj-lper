@@ -973,6 +973,7 @@
           <button class="sync-btn" id="sync-copy-btn" type="button">Kopiér kode</button>
           <button class="sync-btn" id="sync-pull-btn" type="button">Hent nyeste</button>
           <button class="sync-btn" id="sync-qr-btn" type="button">📱 QR-kode</button>
+          <button class="sync-btn" id="sync-notify-btn" type="button">🔔 Notifikationer</button>
           <button class="sync-link" id="sync-disconnect-btn" type="button">Afbryd</button>
         </div>
         <p class="sync-hint" id="sync-hint">Opret en kode på denne enhed, og indsæt samme kode på din anden enhed for at dele rapportens data.</p>
@@ -1617,6 +1618,7 @@
     var copyBtn = document.getElementById("sync-copy-btn");
     var pullBtn = document.getElementById("sync-pull-btn");
     var qrBtn = document.getElementById("sync-qr-btn");
+    var notifyBtn = document.getElementById("sync-notify-btn");
     var disconnectBtn = document.getElementById("sync-disconnect-btn");
     var qrModalBackdrop = document.getElementById("qr-modal-backdrop");
     var qrModalClose = document.getElementById("qr-modal-close");
@@ -1633,6 +1635,24 @@
         setStatus("Forbundet");
       } else {
         setStatus("Ikke forbundet");
+      }
+      renderNotifyBtn();
+    }
+
+    function renderNotifyBtn() {
+      if (!notifyBtn) return;
+      if (!notifySupported()) {
+        notifyBtn.textContent = "🔔 Ikke understøttet";
+        notifyBtn.disabled = true;
+        return;
+      }
+      notifyBtn.disabled = false;
+      if (Notification.permission === "denied") {
+        notifyBtn.textContent = "🔕 Blokeret i browseren";
+      } else if (notifyEnabled()) {
+        notifyBtn.textContent = "🔔 Notifikationer: Til";
+      } else {
+        notifyBtn.textContent = "🔕 Notifikationer: Fra";
       }
     }
 
@@ -1874,6 +1894,77 @@
       }, 1500);
     }
 
+    // ---------- notifikationer for eksternt indsendte (QR) opgaver ----------
+    // Viser en almindelig browser-notifikation, hver gang en NY opgave,
+    // indsendt via QR-koden, dukker op i "Kommende opgaver" - mens appen/
+    // fanen er åben (også minimeret/i baggrunden). Virker IKKE, hvis appen
+    // er helt lukket - det kræver en "rigtig" push-notifikation (service
+    // worker + nøgler + serverdel, der kan sende signerede beskeder ud),
+    // som er en større, separat opgave, bevidst fravalgt for nu.
+    var LS_NOTIFY_PREF_KEY = "dlh-notify-enabled";
+    var LS_NOTIFY_SEEN_KEY = "dlh-notify-seen-ids";
+    var QR_SUBMIT_MARKER = "📱 Indsendt via QR-kode";
+
+    function notifySupported() { return typeof window.Notification !== "undefined"; }
+    function notifyEnabled() {
+      return notifySupported() && Notification.permission === "granted" && localStorage.getItem(LS_NOTIFY_PREF_KEY) === "1";
+    }
+    function loadNotifySeenIds() {
+      try { return JSON.parse(localStorage.getItem(LS_NOTIFY_SEEN_KEY) || "[]"); }
+      catch (e) { return []; }
+    }
+    function saveNotifySeenIds(ids) {
+      try { localStorage.setItem(LS_NOTIFY_SEEN_KEY, JSON.stringify(ids)); } catch (e) {}
+    }
+
+    // Kaldes efter enhver frisk hentning af "kommende opgaver" - finder nye
+    // (endnu ikke "sete") punkter, og viser én notifikation pr. stk for dem,
+    // der er indsendt via QR-koden. ALLE punkt-id'er huskes som "sete", ikke
+    // kun QR-indsendte, så et punkt aldrig tjekkes/viser en notifikation to
+    // gange.
+    function checkForNewExternalTasks(list) {
+      if (!notifyEnabled()) return;
+      try {
+        var seen = loadNotifySeenIds();
+        var seenSet = {};
+        seen.forEach(function (id) { seenSet[id] = true; });
+        var changed = false;
+        (list || []).filter(function (t) { return !t.deleted; }).forEach(function (t) {
+          if (seenSet[t.id]) return;
+          seen.push(t.id);
+          changed = true;
+          if (t.note && t.note.indexOf(QR_SUBMIT_MARKER) !== -1) {
+            try {
+              new Notification("📱 Ny opgave indsendt", {
+                body: t.title || "(uden titel)",
+                tag: "dlh-upcoming-" + t.id
+              });
+            } catch (e) {}
+          }
+        });
+        if (changed) saveNotifySeenIds(seen);
+      } catch (e) {}
+    }
+
+    // Slår notifikationer til: beder om tilladelse (skal ske ved et rigtigt
+    // klik - browsere tillader ikke at spørge automatisk), og markerer alt,
+    // der allerede ligger i Kommende opgaver LIGE NU, som "allerede set" -
+    // ellers ville man få en bølge af notifikationer for gamle opgaver, i
+    // samme øjeblik man slår funktionen til.
+    async function enableNotifications() {
+      if (!notifySupported()) return false;
+      var perm = Notification.permission;
+      if (perm !== "granted") perm = await Notification.requestPermission();
+      if (perm !== "granted") return false;
+      localStorage.setItem(LS_NOTIFY_PREF_KEY, "1");
+      var current = window.__dlhGetUpcoming ? window.__dlhGetUpcoming() : [];
+      saveNotifySeenIds(current.map(function (t) { return t.id; }));
+      return true;
+    }
+    function disableNotifications() {
+      localStorage.setItem(LS_NOTIFY_PREF_KEY, "0");
+    }
+
     function startPolling() {
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(function () {
@@ -1887,6 +1978,12 @@
         // fane/app midt i), skal ikke kunne blokere for at et punkt, der er
         // udført/slettet på en ANDEN enhed, bliver fjernet herfra i baggrunden.
         if (window.__dlhRefreshHistory) window.__dlhRefreshHistory();
+        // Kommende opgaver hentes HER (ikke kun i Opgaveoverblik-fanens egen
+        // baggrunds-opdatering), så en notifikation om en QR-indsendt
+        // opgave virker uanset hvilken fane man aktivt sidder på.
+        if (window.__dlhRefreshUpcoming) {
+          window.__dlhRefreshUpcoming().then(checkForNewExternalTasks);
+        }
       }, 20000);
     }
 
@@ -1972,6 +2069,25 @@
         qrModalBackdrop.style.display = "flex";
       } catch (e) {
         setStatus("Kunne ikke lave QR-kode");
+      }
+    });
+    notifyBtn.addEventListener("click", async function () {
+      if (!notifySupported()) return;
+      if (Notification.permission === "denied") {
+        alert('Notifikationer er blokeret for denne side i browseren. De skal slås til i browserens/telefonens indstillinger for at kunne bruges her.');
+        return;
+      }
+      if (notifyEnabled()) {
+        disableNotifications();
+        renderNotifyBtn();
+        return;
+      }
+      notifyBtn.disabled = true;
+      var ok = await enableNotifications();
+      notifyBtn.disabled = false;
+      renderNotifyBtn();
+      if (ok) {
+        try { new Notification("🔔 Notifikationer er slået til", { body: "Du får nu besked her, når nogen tilføjer en opgave via QR-koden." }); } catch (e) {}
       }
     });
     qrModalClose.addEventListener("click", function () {
