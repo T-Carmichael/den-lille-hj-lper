@@ -1936,13 +1936,30 @@
     // kommende opgaver, kan kalde den samme funktion.
     window.__dlhCheckForNewExternalTasks = checkForNewExternalTasks;
     function checkForNewExternalTasks(list) {
-      if (!notifyEnabled()) return;
+      // MIDLERTIDIGT (diagnostik): viser tydeligt HVOR/HVORFOR en
+      // forventet notifikation udebliver - fandt to andre reelle fejl her
+      // tidligere, så gætter ikke videre uden data denne gang.
+      if (!notifyEnabled()) {
+        window.__dlhNotifyDebugLog = "notifyEnabled() var FALSK - permission=" +
+          (notifySupported() ? Notification.permission : "(Notification findes ikke)") +
+          ", præference=" + localStorage.getItem(LS_NOTIFY_PREF_KEY);
+        return;
+      }
       try {
         var seen = loadNotifySeenIds();
         var seenSet = {};
         seen.forEach(function (id) { seenSet[id] = true; });
         var changed = false;
-        (list || []).filter(function (t) { return !t.deleted; }).forEach(function (t) {
+        var activeList = (list || []).filter(function (t) { return !t.deleted; });
+        var newOnes = activeList.filter(function (t) { return !seenSet[t.id]; });
+        if (newOnes.length > 0) {
+          alert("🔍 Fejlsøgning: fandt " + newOnes.length + " ny(e) opgave(r): " +
+            newOnes.map(function (t) {
+              var isQr = !!(t.note && t.note.indexOf(QR_SUBMIT_MARKER) !== -1);
+              return '"' + t.title + '" (QR-match: ' + isQr + ')';
+            }).join(", "));
+        }
+        activeList.forEach(function (t) {
           if (seenSet[t.id]) return;
           seen.push(t.id);
           changed = true;
@@ -1952,11 +1969,15 @@
                 body: t.title || "(uden titel)",
                 tag: "dlh-upcoming-" + t.id
               });
-            } catch (e) {}
+            } catch (e) {
+              alert("🔍 Fejlsøgning: Notification() kastede en fejl: " + (e && e.message ? e.message : String(e)));
+            }
           }
         });
         if (changed) saveNotifySeenIds(seen);
-      } catch (e) {}
+      } catch (e) {
+        alert("🔍 Fejlsøgning: UVENTET FEJL i checkForNewExternalTasks: " + (e && e.message ? e.message : String(e)));
+      }
     }
 
     // Slår notifikationer til: beder om tilladelse (skal ske ved et rigtigt
@@ -1971,6 +1992,16 @@
       if (perm !== "granted") return false;
       localStorage.setItem(LS_NOTIFY_PREF_KEY, "1");
       var current = window.__dlhGetUpcoming ? window.__dlhGetUpcoming() : [];
+      // MIDLERTIDIGT (diagnostik): viser PRÆCIS hvilke opgaver der markeres
+      // som "allerede set" i samme øjeblik, notifikationer slås til - hvis
+      // en test-opgave allerede ligger i "Kommende opgaver" på dette
+      // tidspunkt (fx fordi man slår funktionen fra/til igen som en del af
+      // fejlsøgning), bliver DEN markeret som set og udløser aldrig en
+      // notifikation, selvom det føles som en frisk test.
+      if (current.length > 0) {
+        alert("🔍 Fejlsøgning: markerer " + current.length + " allerede-eksisterende opgave(r) som \"set\" (udløser ALDRIG notifikation): " +
+          current.map(function (t) { return '"' + t.title + '"'; }).join(", "));
+      }
       saveNotifySeenIds(current.map(function (t) { return t.id; }));
       return true;
     }
