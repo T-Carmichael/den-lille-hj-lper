@@ -1908,6 +1908,44 @@
     var LS_NOTIFY_SEEN_KEY = "dlh-notify-seen-ids";
     var QR_SUBMIT_MARKER = "📱 Indsendt via QR-kode";
 
+    // RETTET (fandt den reelle årsag til, at notifikationer aldrig virkede,
+    // heller ikke efter to forrige rettelser): Android Chrome understøtter
+    // IKKE "new Notification(...)" kaldt direkte fra sidens eget script -
+    // det kaster en fejl ("Failed to construct 'Notification': Illegal
+    // constructor. Use ServiceWorkerRegistration.showNotification()
+    // instead."). Denne fejl blev tidligere fanget af et tomt try/catch
+    // (samme mønster som resten af appens fejlsikring), så den forsvandt
+    // helt stille - permission var korrekt givet, opgaven blev korrekt
+    // fundet, men selve visningen af notifikationen fejlede usynligt hver
+    // eneste gang på Android. Løsningen kræver en (meget lille) service
+    // worker (sw.js) - IKKE det samme som "rigtig" push (den lytter ikke
+    // efter push-events, ingen server sender noget til den) - kun
+    // registreret for at kunne bruge dens showNotification()-metode i
+    // stedet for den direkte konstruktør.
+    var swRegistration = null;
+    function registerNotifyServiceWorker() {
+      if (!("serviceWorker" in navigator)) return;
+      navigator.serviceWorker.register("/sw.js").then(function (reg) {
+        swRegistration = reg;
+      }).catch(function () {});
+    }
+    registerNotifyServiceWorker();
+
+    async function showAppNotification(title, options) {
+      try {
+        if (!swRegistration && "serviceWorker" in navigator) {
+          swRegistration = await navigator.serviceWorker.ready.catch(function () { return null; });
+        }
+        if (swRegistration && swRegistration.showNotification) {
+          await swRegistration.showNotification(title, options);
+          return;
+        }
+      } catch (e) {}
+      // Faldback til den direkte konstruktør - virker fint på desktop-
+      // browsere, selv uden en aktiv service worker.
+      try { new Notification(title, options); } catch (e) {}
+    }
+
     function notifySupported() { return typeof window.Notification !== "undefined"; }
     function notifyEnabled() {
       return notifySupported() && Notification.permission === "granted" && localStorage.getItem(LS_NOTIFY_PREF_KEY) === "1";
@@ -1936,48 +1974,25 @@
     // kommende opgaver, kan kalde den samme funktion.
     window.__dlhCheckForNewExternalTasks = checkForNewExternalTasks;
     function checkForNewExternalTasks(list) {
-      // MIDLERTIDIGT (diagnostik): viser tydeligt HVOR/HVORFOR en
-      // forventet notifikation udebliver - fandt to andre reelle fejl her
-      // tidligere, så gætter ikke videre uden data denne gang.
-      if (!notifyEnabled()) {
-        window.__dlhNotifyDebugLog = "notifyEnabled() var FALSK - permission=" +
-          (notifySupported() ? Notification.permission : "(Notification findes ikke)") +
-          ", præference=" + localStorage.getItem(LS_NOTIFY_PREF_KEY);
-        return;
-      }
+      if (!notifyEnabled()) return;
       try {
         var seen = loadNotifySeenIds();
         var seenSet = {};
         seen.forEach(function (id) { seenSet[id] = true; });
         var changed = false;
-        var activeList = (list || []).filter(function (t) { return !t.deleted; });
-        var newOnes = activeList.filter(function (t) { return !seenSet[t.id]; });
-        if (newOnes.length > 0) {
-          alert("🔍 Fejlsøgning: fandt " + newOnes.length + " ny(e) opgave(r): " +
-            newOnes.map(function (t) {
-              var isQr = !!(t.note && t.note.indexOf(QR_SUBMIT_MARKER) !== -1);
-              return '"' + t.title + '" (QR-match: ' + isQr + ')';
-            }).join(", "));
-        }
-        activeList.forEach(function (t) {
+        (list || []).filter(function (t) { return !t.deleted; }).forEach(function (t) {
           if (seenSet[t.id]) return;
           seen.push(t.id);
           changed = true;
           if (t.note && t.note.indexOf(QR_SUBMIT_MARKER) !== -1) {
-            try {
-              new Notification("📱 Ny opgave indsendt", {
-                body: t.title || "(uden titel)",
-                tag: "dlh-upcoming-" + t.id
-              });
-            } catch (e) {
-              alert("🔍 Fejlsøgning: Notification() kastede en fejl: " + (e && e.message ? e.message : String(e)));
-            }
+            showAppNotification("📱 Ny opgave indsendt", {
+              body: t.title || "(uden titel)",
+              tag: "dlh-upcoming-" + t.id
+            });
           }
         });
         if (changed) saveNotifySeenIds(seen);
-      } catch (e) {
-        alert("🔍 Fejlsøgning: UVENTET FEJL i checkForNewExternalTasks: " + (e && e.message ? e.message : String(e)));
-      }
+      } catch (e) {}
     }
 
     // Slår notifikationer til: beder om tilladelse (skal ske ved et rigtigt
@@ -1992,16 +2007,6 @@
       if (perm !== "granted") return false;
       localStorage.setItem(LS_NOTIFY_PREF_KEY, "1");
       var current = window.__dlhGetUpcoming ? window.__dlhGetUpcoming() : [];
-      // MIDLERTIDIGT (diagnostik): viser PRÆCIS hvilke opgaver der markeres
-      // som "allerede set" i samme øjeblik, notifikationer slås til - hvis
-      // en test-opgave allerede ligger i "Kommende opgaver" på dette
-      // tidspunkt (fx fordi man slår funktionen fra/til igen som en del af
-      // fejlsøgning), bliver DEN markeret som set og udløser aldrig en
-      // notifikation, selvom det føles som en frisk test.
-      if (current.length > 0) {
-        alert("🔍 Fejlsøgning: markerer " + current.length + " allerede-eksisterende opgave(r) som \"set\" (udløser ALDRIG notifikation): " +
-          current.map(function (t) { return '"' + t.title + '"'; }).join(", "));
-      }
       saveNotifySeenIds(current.map(function (t) { return t.id; }));
       return true;
     }
@@ -2159,7 +2164,7 @@
       notifyBtn.disabled = false;
       renderNotifyBtn();
       if (ok) {
-        try { new Notification("🔔 Notifikationer er slået til", { body: "Du får nu besked her, når nogen tilføjer en opgave via QR-koden." }); } catch (e) {}
+        showAppNotification("🔔 Notifikationer er slået til", { body: "Du får nu besked her, når nogen tilføjer en opgave via QR-koden." });
       }
     });
     qrModalClose.addEventListener("click", function () {

@@ -28,6 +28,13 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
 - `tilfoej-opgave.html` — separat, selvstændig side til at tilføje en
   opgave via QR-kode (se afsnittet om QR-opgaver nedenfor). Ikke en del af
   selve app-fanerne, linkes kun til via QR-koden/linket.
+- `se-optaelling.html` — separat, skrivebeskyttet side til at vise
+  inventarlisten (Optælling-fanen) for folk uden appen, fx ledelsen (se
+  Optælling-afsnittet nedenfor). Samme princip som `tilfoej-opgave.html`.
+- `sw.js` — en meget lille service worker, der UDELUKKENDE findes for at
+  browser-notifikationer kan vises korrekt på Android (se afsnittet om
+  "🔔 Notifikationer"-knappen nedenfor). Lytter ikke efter `push`-events,
+  ingen server sender noget til den.
 - Udover disse er der ingen andre kildefiler. Redigér `index.html` direkte.
 
 ## Hvad appen indeholder
@@ -677,6 +684,47 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     - Testet grundigt: nye QR-opgaver udløser korrekt én notifikation
       hver, allerede-sete/ikke-QR-opgaver udløser ingen, og tilstanden
       (til/fra) består efter en genindlæsning.
+    - **Den REELLE årsag til, at notifikationer slet ikke virkede på
+      brugerens telefon** (heller ikke efter to forrige rettelser af
+      selve tjek-logikken ovenfor) — **Android Chrome understøtter IKKE
+      `new Notification(...)` kaldt direkte fra sidens eget script**. Det
+      kaster en fejl ("Failed to construct 'Notification': Illegal
+      constructor. Use ServiceWorkerRegistration.showNotification()
+      instead.") — en veldokumenteret, permanent begrænsning i Android
+      Chrome (IKKE et midlertidigt problem eller en indstilling), i
+      modsætning til desktop-browsere, hvor den direkte konstruktør virker
+      fint. Denne fejl blev tidligere fanget af et tomt `try/catch`
+      (samme fejlsikrings-mønster som resten af appen bruger konsekvent
+      andre steder) og forsvandt derfor helt stille — permission var
+      korrekt givet, opgaven blev korrekt fundet og markeret "set", men
+      selve visningen af notifikationen fejlede usynligt hver eneste gang
+      på Android. To midlertidige diagnostik-omgange (viste tydelige
+      popup-beskeder for at indsnævre årsagen) fandt ikke dette, fordi de
+      blev tilføjet FØR denne konkrete fejl blev kendt/mistænkt - men en
+      efterfølgende, mere grundig kodegennemgang (kombineret med kendt,
+      dokumenteret Android Chrome-adfærd) fandt den.
+      - **Løsning**: en ny, meget lille service worker (`sw.js`) — IKKE
+        det samme som "rigtig" push-notifikation (den lytter ikke efter
+        `push`-events, og ingen server sender noget til den; kun
+        registreret for at kunne bruge dens `showNotification()`-metode).
+        Ny hjælpefunktion i det ydre script, `showAppNotification(titel,
+        options)`, forsøger `swRegistration.showNotification()` først,
+        med den direkte `new Notification(...)`-konstruktør kun som
+        faldback (virker fint på desktop-browsere, selv uden en aktiv
+        service worker). Begge steder, der viste en notifikation
+        (bekræftelses-beskeden ved tilvalg, og selve QR-opgave-
+        notifikationen), bruger nu denne funktion.
+      - **Verificeret grundigt, på trods af at selve fejlen ikke kan
+        genskabes i dette testmiljø** (desktop Chromium har ikke Android
+        Chromes begrænsning) — testet ved bevidst at ERSTATTE
+        `window.Notification`s konstruktør med en, der kaster PRÆCIS den
+        samme fejl, som den rigtige Android Chrome gør, og bekræfte at
+        `showAppNotification` i den situation korrekt undgår den
+        (0 kald til den ødelagte konstruktør) og i stedet viser
+        notifikationen korrekt via service workerens `showNotification()`
+        - både for selve tilvalgs-bekræftelsen og for en fuld, ende-til-
+        ende simulering af en ny QR-opgave, der ankommer via den rigtige
+        20-sekunders baggrunds-poll.
   - **"▶ Sæt i gang"-knap** på hvert punkt i "Kommende opgaver" (Opgave-
     overblik-fanen) — virker på alle kommende opgaver, ikke kun dem fra
     QR-koden. Flytter punktet ind i den ÅBNE Rapport-formular som et nyt,

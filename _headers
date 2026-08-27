@@ -12,3 +12,6 @@
 
 /se-optaelling.html
   Cache-Control: no-cache, no-store, must-revalidate
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
