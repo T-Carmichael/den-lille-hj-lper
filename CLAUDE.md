@@ -438,17 +438,73 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     ikke gemme lokalt") er beholdt i statuslinjen, da de er nyttige
     permanent (stille fejl var netop det, der gjorde denne fejl så svær
     at opdage første gang).
-    - **Dette løser kun symptomet ved pladsmangel (ofrer ældre fotos),
+    - **Dette løste kun symptomet ved pladsmangel (ofrer ældre fotos),
       ikke selve den underliggende plads-begrænsning** - `localStorage`
-      har typisk kun ca. 5 MB i alt pr. side. Med Optælling-fanen i
-      brug (endnu flere fotos over tid) vil selv "ofr ældre fotos"
-      -strategien før eller siden ramme et loft. Planen (aftalt, endnu
-      IKKE påbegyndt) er at flytte selve lagringen fra `localStorage`
-      til `IndexedDB`, som har et langt større loft (typisk 50+ MB,
-      ofte betydeligt mere) - kræver en mere grundig omskrivning, da
-      IndexedDB er asynkront (sandsynligvis en hukommelses-cache +
-      "skriv igennem til IndexedDB i baggrunden"-arkitektur, så ikke
-      alle steder, der læser historik/optælling synkront, skal skrives om).
+      har typisk kun ca. 5 MB i alt pr. side. Se næste punkt for den
+      permanente løsning, som nu er gennemført for Rapport-fanens fotos.
+  - **Rapport-fanens før/efter-fotos flyttet fra `localStorage` til
+    `IndexedDB`** (den permanente løsning på pladsproblemet, ikke bare
+    symptombehandling). `localStorage` har typisk kun ca. 5 MB i alt;
+    `IndexedDB` har typisk 50+ MB, ofte betydeligt mere - rigeligt til
+    måneders/års brug. **Arkitektur**: selve tekst-/status-dataen (titel,
+    beskrivelse, status, ansvarlig osv.) ligger STADIG i `localStorage`
+    som hidtil (fylder reelt intet, har aldrig været problemet) - kun
+    selve billed-bytes (`fotoFor`/`fotoEfter`, base64) flyttes over i
+    IndexedDB, og erstattes i `localStorage` af en lille tekst-reference
+    (`"idbphoto:<id>"`). Dette er en langt mindre indgribende ændring end
+    at gøre HELE historik-laget asynkront - kun de steder, der rent
+    faktisk håndterer fotos, skal vide noget om IndexedDB; alt andet
+    (sammenlægning, id-migrering, sletning, statusændring, Opgaveoverblik-
+    visning) er fuldstændig uændret og kører stadig synkront som før.
+    - **Nye fotos migreres med det samme**: `__dlhLogToday` kalder
+      `migrateItemsPhotos()` på dagens punkter, FØR de gemmes i
+      `localStorage` - et nyt foto, der lige er taget, ender aldrig som
+      rå data i `localStorage`.
+    - **Allerede-eksisterende (rå) fotos migreres automatisk ved app-
+      start**: en baggrunds-oprydning (`sweepMigrateHistoryPhotos`, kaldt
+      i slutningen af sync-IIFE'en) scanner HELE den lokalt gemte historik
+      hver gang appen indlæses, flytter ethvert foto, der stadig ligger
+      som rå data (fra FØR denne omlægning), over i IndexedDB, og gemmer
+      den nu meget mindre historik tilbage. Trygt at køre igen og igen -
+      allerede-migrerede punkter (kendt på `"idbphoto:"`-præfikset,
+      `isPhotoRef()`) springes billigt over. Kører også ved almindelig
+      synkronisering (`__dlhRefreshHistory`), da IndexedDB er PR. ENHED,
+      ikke synkroniseret - data hentet fra en anden enhed/serveren kan
+      stadig indeholde rå fotos, som DENNE enhed selv skal migrere for at
+      få gavn af pladsbesparelsen.
+    - **Fotos slås op igen (reference → rigtigt billede), når data skal
+      VISES i selve rapport-formularen** - kun "Generér rapport"
+      (`openGeneratedReport`) gjorde dette nødvendigt at ændre
+      (`window.__dlhResolveItemsPhotos`, kaldt før `__setReportState`) -
+      REPORT_HTML kender intet til IndexedDB og forventer altid rå fotos.
+      Opgaveoverblikkets liste viser aldrig fotos direkte, så ingen
+      ændring var nødvendig der.
+    - **Backup (💾)/Gendan (📥) opdateret til at inkludere selve fotoene**
+      - ellers ville en backup-fil se ud til at indeholde opgaver, men
+      mangle de rigtige billeder ved en eventuel gendannelse, fordi de nu
+      reelt ligger i IndexedDB, ikke i de `localStorage`-nøgler, backuppen
+      ellers læser fra. Nyt `photos`-felt i backup-filen (`{id: dataUrl}`,
+      hentet med `window.__dlhGetAllPhotos`); gendannelse lægger dem
+      tilbage i IndexedDB med samme id'er, så eksisterende referencer i
+      historikken passer uændret (`window.__dlhImportPhotos`/direkte i
+      `__dlhImportBackup`).
+    - **IndexedDB-forbindelsen lukker sig selv ved `onversionchange`** -
+      forhindrer at en helt anden fane/kontekst, der forsøger at åbne
+      databasen med en ny version, bare hænger og venter for evigt (fandt
+      dette under test: `indexedDB.deleteDatabase()` blokerede
+      uendeligt, fordi en allerede åben forbindelse ikke lukkede sig selv).
+    - **Verificeret med realistisk skala i test**: 15 dage × 8 punkter × 2
+      fotos (samme størrelsesorden som den rigtige krise, der udløste hele
+      denne sag) gav under 30 KB i `localStorage` bagefter (var ca. 14 MB
+      som rå data - ville have udløst QuotaExceededError næsten med det
+      samme). Baglæns-kompatibilitet testet: gamle, allerede-gemte rå
+      fotos vises stadig korrekt (både direkte, og efter automatisk
+      migrering).
+    - **Optælling-fanens depot-billeder (`image`-feltet) er IKKE migreret
+      endnu** - samme mønster, men egen indsats (Optælling har sin egen
+      visning, der viser billeder direkte i listen, kræver derfor mere
+      end Opgaveoverblik gjorde). Planlagt som naturligt næste skridt,
+      især efter flere brugere er begyndt at bruge fanen.
 - **Rapport-fanens dato-felt sætter automatisk sig selv til dags dato**
   (`ensureTodayDate()` i det ydre script, kaldt fra `reportFrame`'s
   `"load"`-event - EFTER en eventuel `pullState()` er færdig, så den ikke

@@ -1116,6 +1116,12 @@
 
     alert(summary);
 
+    // Fotos ligger reelt i IndexedDB, ikke i localStorage-nøglerne ovenfor -
+    // uden dette ville en backup-fil se ud til at indeholde opgaver/ting,
+    // men mangle selve billederne ved en eventuel gendannelse.
+    var photos = {};
+    try { photos = await window.__dlhGetAllPhotos(); } catch (e) {}
+
     var backup = {
       exportedAt: new Date().toISOString(),
       syncCode: syncCode,
@@ -1123,7 +1129,8 @@
       upcoming: upcoming,
       rooms: rooms,
       count: count,
-      faste: faste
+      faste: faste,
+      photos: photos
     };
     var json = JSON.stringify(backup, null, 2);
     var filename = "den-lille-hjaelper-backup-" + new Date().toISOString().slice(0, 10) + ".json";
@@ -1178,6 +1185,7 @@
         "Kommende opgaver: " + (result.upcoming !== undefined ? result.upcoming + " ialt" : "ikke ændret") + "\n" +
         "Depotrum: " + (result.rooms !== undefined ? result.rooms + " rum" : "ikke ændret") + "\n" +
         "Optælling: " + (result.count !== undefined ? result.count + " ting" : "ikke ændret") + "\n" +
+        "Fotos: " + (result.photos !== undefined ? result.photos + " gendannet" : "ingen i filen") + "\n" +
         "Faste opgaver: " + (result.faste !== undefined ? result.faste + " ialt" : "ikke ændret") + "\n\n" +
         "Åbn Opgaveoverblik for at se det samlede resultat."
       );
@@ -2092,6 +2100,182 @@
       } catch (e) {}
     }, 4000);
 
+    // ---------- foto-lager (IndexedDB) ----------
+    // localStorage har typisk kun ca. 5 MB i alt pr. side - alt for lidt til
+    // måneders/års før/efter-fotos og depot-billeder. IndexedDB har et langt
+    // større loft (typisk 50+ MB, ofte betydeligt mere), så selve
+    // billed-dataen (base64) flyttes herover; kun en lille TEKST-reference
+    // ("idbphoto:<id>") ligger tilbage i historik/optælling i localStorage.
+    // Bevidst KUN fotos, ikke resten af appens data - tekst/status fylder
+    // reelt intet og har aldrig været problemet.
+    var IDB_NAME = "dlh-photos-db";
+    var IDB_STORE = "photos";
+    var idbPromise = null;
+
+    function idbOpen() {
+      if (idbPromise) return idbPromise;
+      idbPromise = new Promise(function (resolve, reject) {
+        if (!window.indexedDB) { reject(new Error("IndexedDB ikke tilgængelig")); return; }
+        var req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = function () {
+          if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
+        };
+        req.onsuccess = function () {
+          // Luk forbindelsen igen, hvis en ANDEN fane/kontekst har brug for
+          // at åbne databasen med en ny version - ellers ville den anden
+          // side blot hænge og vente for evigt (IndexedDB tillader ikke en
+          // version-ændring, mens en åben forbindelse stadig bruger den
+          // gamle version).
+          req.result.onversionchange = function () { req.result.close(); idbPromise = null; };
+          resolve(req.result);
+        };
+        req.onerror = function () { reject(req.error); };
+      });
+      return idbPromise;
+    }
+
+    function idbPutPhoto(id, dataUrl) {
+      return idbOpen().then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var tx = db.transaction(IDB_STORE, "readwrite");
+          tx.objectStore(IDB_STORE).put(dataUrl, id);
+          tx.oncomplete = function () { resolve(); };
+          tx.onerror = function () { reject(tx.error); };
+        });
+      });
+    }
+
+    function idbGetPhoto(id) {
+      return idbOpen().then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var tx = db.transaction(IDB_STORE, "readonly");
+          var req = tx.objectStore(IDB_STORE).get(id);
+          req.onsuccess = function () { resolve(req.result || null); };
+          req.onerror = function () { reject(req.error); };
+        });
+      });
+    }
+
+    // Henter ALLE gemte fotos som { id: dataUrl } - bruges kun af
+    // Backup-knappen, så en backup-fil stadig indeholder de rigtige
+    // billeder, selvom de reelt ligger i IndexedDB og ikke i localStorage.
+    function idbGetAllPhotos() {
+      return idbOpen().then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var tx = db.transaction(IDB_STORE, "readonly");
+          var store = tx.objectStore(IDB_STORE);
+          var result = {};
+          var cursorReq = store.openCursor();
+          cursorReq.onsuccess = function (e) {
+            var cursor = e.target.result;
+            if (cursor) { result[cursor.key] = cursor.value; cursor.continue(); }
+            else resolve(result);
+          };
+          cursorReq.onerror = function () { reject(cursorReq.error); };
+        });
+      });
+    }
+
+    var PHOTO_REF_PREFIX = "idbphoto:";
+    function isPhotoRef(v) { return typeof v === "string" && v.indexOf(PHOTO_REF_PREFIX) === 0; }
+    function genPhotoId() { return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+
+    // Flytter ÉT foto-felt (en rå "data:..."-URL) over i IndexedDB og
+    // returnerer en reference i stedet. Allerede-migrerede referencer og
+    // tomme felter røres ikke - trygt/billigt at kalde igen og igen på
+    // data, der måske allerede er migreret. Fejler IndexedDB af en eller
+    // anden grund, beholdes den oprindelige værdi uændret (fotoet går
+    // aldrig tabt, det bliver bare liggende i localStorage som hidtil,
+    // indtil det lykkes en anden gang).
+    async function migratePhotoField(value) {
+      if (!value || isPhotoRef(value)) return value;
+      try {
+        var id = genPhotoId();
+        await idbPutPhoto(id, value);
+        return PHOTO_REF_PREFIX + id;
+      } catch (e) {
+        return value;
+      }
+    }
+
+    // Slår en reference op og returnerer det rigtige foto (rå data-URL)
+    // igen - bruges når data skal VISES/bruges (fx lægges ind i selve
+    // rapport-formularen). Ikke en reference (allerede rå data, eller
+    // tomt) gives uændret tilbage.
+    async function resolvePhotoField(value) {
+      if (!value || !isPhotoRef(value)) return value;
+      try {
+        var id = value.slice(PHOTO_REF_PREFIX.length);
+        var dataUrl = await idbGetPhoto(id);
+        return dataUrl || value;
+      } catch (e) {
+        return value;
+      }
+    }
+
+    // Migrerer fotoFor/fotoEfter for en LISTE af historik-punkter. Returnerer
+    // { items, changed } - changed er kun true, hvis mindst ét foto reelt
+    // blev flyttet (så kaldere kan undgå unødvendige gemninger).
+    async function migrateItemsPhotos(items) {
+      var out = [];
+      var changed = false;
+      for (var i = 0; i < (items || []).length; i++) {
+        var it = items[i];
+        if (!it) { out.push(it); continue; }
+        var newFotoFor = await migratePhotoField(it.fotoFor);
+        var newFotoEfter = await migratePhotoField(it.fotoEfter);
+        if (newFotoFor === it.fotoFor && newFotoEfter === it.fotoEfter) {
+          out.push(it);
+        } else {
+          changed = true;
+          var copy = {};
+          for (var k in it) copy[k] = it[k];
+          copy.fotoFor = newFotoFor;
+          copy.fotoEfter = newFotoEfter;
+          out.push(copy);
+        }
+      }
+      return { items: out, changed: changed };
+    }
+
+    // Samme princip, men for en HEL historik-liste (alle dage).
+    async function migrateHistoryPhotos(history) {
+      var out = [];
+      var changed = false;
+      for (var i = 0; i < (history || []).length; i++) {
+        var day = history[i];
+        var result = await migrateItemsPhotos(day.items || []);
+        if (result.changed) {
+          changed = true;
+          var dayCopy = {};
+          for (var k in day) dayCopy[k] = day[k];
+          dayCopy.items = result.items;
+          out.push(dayCopy);
+        } else {
+          out.push(day);
+        }
+      }
+      return { history: out, changed: changed };
+    }
+
+    // Slår fotoFor/fotoEfter-referencer op igen (til rå data-URL'er), FØR
+    // punkter sendes ind i selve rapport-formularen (fx "Generér rapport") -
+    // formularen (REPORT_HTML) kender intet til IndexedDB, den forventer
+    // altid rå data direkte.
+    async function resolveItemsPhotos(items) {
+      var out = [];
+      for (var i = 0; i < (items || []).length; i++) {
+        var it = items[i];
+        if (!it) { out.push(it); continue; }
+        var copy = {};
+        for (var k in it) copy[k] = it[k];
+        copy.fotoFor = await resolvePhotoField(it.fotoFor);
+        copy.fotoEfter = await resolvePhotoField(it.fotoEfter);
+        out.push(copy);
+      }
+      return out;
+    }
+
     // ---------- opgave-historik (til Opgaveoverblik-fanen) ----------
     var LS_HISTORY_KEY = "dlh-task-history";
 
@@ -2289,6 +2473,29 @@
 
     window.__dlhGetHistory = function () { return loadHistoryLocal(); };
 
+    // Slår evt. foto-referencer op til rigtige billeder igen - bruges af
+    // Opgaveoverblikkets "Generér rapport", FØR en gemt historisk dag
+    // sendes ind i selve rapport-formularen (som kun forstår rå fotos, ikke
+    // IndexedDB-referencer).
+    window.__dlhResolveItemsPhotos = function (items) { return resolveItemsPhotos(items); };
+
+    // Bruges af 💾-knappen, så en backup-fil stadig indeholder de rigtige
+    // fotos, selvom de reelt ligger i IndexedDB (ikke i localStorage, som
+    // resten af backup-filen læses fra).
+    window.__dlhGetAllPhotos = function () { return idbGetAllPhotos(); };
+
+    // Bruges af 📥-knappen: lægger fotos fra en backup-fils "photos"-felt
+    // ind i IndexedDB igen (samme id'er som før - referencerne i historik/
+    // optælling passer stadig, uden at skulle ændres ved gendannelse).
+    window.__dlhImportPhotos = async function (photosMap) {
+      if (!photosMap) return 0;
+      var count = 0;
+      for (var id in photosMap) {
+        try { await idbPutPhoto(id, photosMap[id]); count++; } catch (e) {}
+      }
+      return count;
+    };
+
     // Giver alle ældre opgavepunkter (logget før punkter fik et rigtigt id -
     // se REPORT_HTML: genItemId/ensureItemId) et stabilt, tilfældigt id, én
     // gang, kun lokalt. Et punkt, der allerede har et id, røres ikke. Dette
@@ -2356,10 +2563,17 @@
       var state = getReportState();
       if (!state) { setStatus("⚠️ FEJL: kunne ikke læse rapport-data (getReportState)"); return { ok: false }; }
       var date = (state.meta && state.meta.dato) || new Date().toISOString().slice(0, 10);
+      // Flyt evt. fotos fra dagens punkter over i IndexedDB, FØR de gemmes i
+      // localStorage - det er selve fotoene (base64), der historisk har
+      // fyldt localStorage op, ikke tekst/status. Fejler IndexedDB af en
+      // eller anden grund, beholdes fotoene bare som hidtil (rå data) -
+      // selve gemningen må aldrig kunne blokeres af dette.
+      var itemsForEntry = state.items || [];
+      try { itemsForEntry = (await migrateItemsPhotos(itemsForEntry)).items; } catch (e) {}
       var entry = {
         date: date,
         montor: (state.meta && state.meta.montor) || "",
-        items: state.items || [],
+        items: itemsForEntry,
         savedAt: new Date().toISOString()
       };
       // Sammenlægning med eksisterende lokal historik må aldrig kunne
@@ -2413,6 +2627,14 @@
         var remote = await pullHistoryRemote();
         if (remote === null) return local;
         var merged = mergeHistory(local, migrateHistoryList(remote));
+        // Data fra en anden enhed kan indeholde rå (endnu ikke migrerede)
+        // fotos - IndexedDB er per-enhed, ikke synkroniseret, så DENNE
+        // enhed skal selv flytte dem over i sin egen IndexedDB for at få
+        // gavn af pladsbesparelsen.
+        try {
+          var photoResult = await migrateHistoryPhotos(merged);
+          if (photoResult.changed) merged = photoResult.history;
+        } catch (e) {}
         merged = saveHistoryLocal(merged);
         await pushHistory(merged);
         await reconcileOpenReportWithHistory(merged);
@@ -3093,6 +3315,16 @@
         if (syncCode) await pushCount(mergedCount);
         result.count = mergedCount.length;
       }
+      if (backup.photos) {
+        // Fotos gendannes FØR historik/optælling ovenfor er nødvendigt at
+        // vente på, da referencerne (id'erne) i backup-filen allerede er de
+        // samme, uanset hvornår selve billed-dataen lægges ind i IndexedDB.
+        var restoredPhotos = 0;
+        for (var photoId in backup.photos) {
+          try { await idbPutPhoto(photoId, backup.photos[photoId]); restoredPhotos++; } catch (e) {}
+        }
+        result.photos = restoredPhotos;
+      }
       if (backup.faste) {
         var mergedFaste = mergeById(loadFasteLocal(), backup.faste);
         saveFasteLocal(mergedFaste);
@@ -3103,6 +3335,25 @@
     };
 
     renderConnectionUI();
+
+    // Engangs-oprydning (men trygt at køre igen og igen - se
+    // migrateHistoryPhotos) ved hver app-start: flytter ALLE fotos, der
+    // allerede ligger som rå data i den lokalt gemte historik (fra FØR
+    // denne IndexedDB-omlægning fandtes), over i IndexedDB - frigør plads i
+    // localStorage med det samme, i stedet for kun at dække NYE fotos
+    // fremadrettet. Kører i baggrunden, blokerer intet, og fejler aldrig
+    // synligt (rører kun kopier, aldrig de faktiske gemte data, før hele
+    // flytningen er lykkedes).
+    (async function sweepMigrateHistoryPhotos() {
+      try {
+        var localHistory = loadHistoryLocal();
+        var result = await migrateHistoryPhotos(localHistory);
+        if (result.changed) {
+          var saved = saveHistoryLocal(result.history);
+          if (syncCode) await pushHistory(saved);
+        }
+      } catch (e) {}
+    })();
   })();
 
   // ---------- Optælling-panel (depotrum, opdelt i rum) ----------
@@ -3830,7 +4081,7 @@
       if(dates.indexOf(prevDate) !== -1) dateEl.value = prevDate;
     }
 
-    function openGeneratedReport(){
+    async function openGeneratedReport(){
       var location = document.getElementById("ov-genrep-location").value;
       var date = document.getElementById("ov-genrep-date").value;
       if(!location || !date) return;
@@ -3840,6 +4091,12 @@
       if(!confirm('Dette udskifter det, du evt. har åbent i Rapport-fanen lige nu, med rapporten for "' + location + '" · ' + formatDueDate(date) + ". Fortsæt?")) return;
 
       var items = (day.items || []).filter(function(it){ return !it.deleted; });
+      // Fotos kan ligge som IndexedDB-referencer (se foto-lager-afsnittet) -
+      // rapport-formularen kender intet til dem, så de slås op til rigtige
+      // billeder igen, FØR de sendes ind.
+      try {
+        if(window.__dlhResolveItemsPhotos) items = await window.__dlhResolveItemsPhotos(items);
+      } catch(e){}
       var frame = document.getElementById("report-frame");
       try {
         frame.contentWindow.__setReportState({
