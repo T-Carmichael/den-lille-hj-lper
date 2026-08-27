@@ -495,6 +495,28 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     tegner, er screenshottet og afkodet med en rigtig, uafhængig
     QR-scanner (Python `pyzbar`), som bekræftede at den dekoder til
     nøjagtig det forventede link.
+  - **"▶ Sæt i gang"-knap** på hvert punkt i "Kommende opgaver" (Opgave-
+    overblik-fanen) — virker på alle kommende opgaver, ikke kun dem fra
+    QR-koden. Flytter punktet ind i den ÅBNE Rapport-formular som et nyt,
+    rigtigt punkt (titel = opgavens titel, beskrivelse = opgavens note,
+    status sat til "Afventer") — sætter samtidig rapportens dato til dags
+    dato, logger det med det samme (`window.autoLogToday()`, samme
+    funktion som resten af appens auto-gem bruger) og skifter til Rapport-
+    fanen. Punktet fjernes fra "Kommende opgaver" (en rigtig sletning,
+    `__dlhDeleteUpcomingEntry` — IKKE `__dlhCompleteUpcoming`, som ville
+    have talt det som en færdig opgave i statistikker/dagslister, selvom
+    det reelt bare lige er startet og stadig "Afventer").
+    - **`REPORT_HTML` fik en ny eksporteret funktion, `window.__addReportItem`**,
+      til dette — tilføjer ÉT punkt til den åbne formular uden at røre
+      resten (i modsætning til `__setReportState`, som erstatter det hele
+      og bruges af "Generér rapport"). Genbruger den samme kort-udfyldnings-
+      logik som `deserializeState` allerede brugte (udtrukket til en fælles
+      hjælpefunktion, `buildFilledPointCard`, så begge veje er 100% samme
+      kode - ingen risiko for at de to stier driver fra hinanden over tid).
+      Ændringen i selve `REPORT_HTML` fulgte den anbefalede fremgangsmåde
+      (se "Vigtige begrænsninger" nedenfor): pakket ud til en selvstændig
+      fil, redigeret, syntaks-tjekket, pakket ind igen med sanity- og
+      roundtrip-tjek, FØR den blev sat ind i `index.html` igen.
 - **Del/installér**: Web Share API + download-fallback, samt en indlejret
   web app manifest (data-URI) til "Installér som app".
 - **Backup (💾) / Gendan (📥)-knapper** øverst i appen (ved siden af
