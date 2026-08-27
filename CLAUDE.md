@@ -625,6 +625,24 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
       ville en notifikation kun dukke op, hvis man tilfældigvis sad på
       netop Opgaveoverblik-fanen, i stedet for fx den langt mere
       sandsynlige Rapport-fane.
+      **Rettet (samme dag) - manglede stadig, når man rent faktisk SAD på
+      Opgaveoverblik-fanen**: selve tjek-funktionen (`checkForNewExternalTasks`)
+      blev kun kaldt ét sted (`startPolling`), ikke i Opgaveoverblik-fanens
+      EGEN opdatering (`__dlhRenderOverview`, kaldt ved fane-skift, samt dens
+      egen 20-sekunders `setInterval`) - selvom BEGGE veje henter kommende
+      opgaver via samme `__dlhRefreshUpcoming()`. En ny QR-opgave dukkede
+      derfor korrekt op i selve listen (det er en helt separat kode-sti),
+      men ingen notifikation blev vist, hvis man sad på netop den fane, når
+      den ankom. Rettet ved at eksportere funktionen
+      (`window.__dlhCheckForNewExternalTasks`) og kalde den fra alle fire
+      steder, der henter kommende opgaver (`startPolling`, "Hent nyeste"-
+      knappen, `__dlhRenderOverview`, og dens egen baggrunds-poll) - undtagen
+      selve `connectWithCode` (en NY forbindelse skal ikke give en bølge af
+      notifikationer for opgaver, der allerede lå der, før enheden
+      overhovedet var forbundet). Fundet af brugeren, der testede med appen
+      åben på netop Opgaveoverblik-fanen - genskabt i test ved at simulere
+      præcis det forløb (skifte til fanen, mens en ny ekstern opgave dukker
+      op på "serveren").
     - **Undgår en "bølge" af notifikationer for gamle opgaver**, når
       funktionen slås til første gang: alt, der allerede ligger i
       "Kommende opgaver" i det øjeblik man trykker knappen, markeres som

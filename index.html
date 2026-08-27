@@ -1922,6 +1922,16 @@
     // der er indsendt via QR-koden. ALLE punkt-id'er huskes som "sete", ikke
     // kun QR-indsendte, så et punkt aldrig tjekkes/viser en notifikation to
     // gange.
+    //
+    // RETTET: skal kaldes efter HVER ENESTE hentning af kommende opgaver -
+    // Opgaveoverblik-fanen har sin EGEN baggrunds-poll og genindlæsning
+    // (__dlhRenderOverview m.fl.), separat fra sync-IIFE'ens startPolling()
+    // ovenfor. Sad man på netop den fane, når en QR-opgave blev hentet via
+    // DEN vej, blev funktionen aldrig kaldt - opgaven dukkede korrekt op i
+    // selve listen (det er en separat kode-sti), men ingen notifikation
+    // blev vist. Derfor eksporteret til window, så alle steder, der henter
+    // kommende opgaver, kan kalde den samme funktion.
+    window.__dlhCheckForNewExternalTasks = checkForNewExternalTasks;
     function checkForNewExternalTasks(list) {
       if (!notifyEnabled()) return;
       try {
@@ -2035,7 +2045,8 @@
     pullBtn.addEventListener("click", async function () {
       await pullState(true);
       await window.__dlhRefreshHistory();
-      await window.__dlhRefreshUpcoming();
+      var freshUpcoming = await window.__dlhRefreshUpcoming();
+      checkForNewExternalTasks(freshUpcoming);
     });
 
     copyBtn.addEventListener("click", async function () {
@@ -4584,6 +4595,7 @@
       // selve overblikket, indtil et helt ANDET tilfældigt render (fx en
       // senere historik-opdatering) tilfældigvis fangede det.
       if(freshUpcoming){ renderUpcoming(); renderList(); }
+      if(freshUpcoming && window.__dlhCheckForNewExternalTasks) window.__dlhCheckForNewExternalTasks(freshUpcoming);
       setOvSyncStatus(connected ? "✓ Opdateret " + nowClock() : "");
     };
 
@@ -4602,6 +4614,7 @@
         if(freshHistory){ renderList(); renderGenRepLocations(); }
         var freshUpcoming = await window.__dlhRefreshUpcoming();
         if(freshUpcoming){ renderUpcoming(); renderList(); }
+        if(freshUpcoming && window.__dlhCheckForNewExternalTasks) window.__dlhCheckForNewExternalTasks(freshUpcoming);
         setOvSyncStatus(connected ? "✓ Opdateret " + nowClock() : "");
       } catch (e) {} // baggrunds-opdatering må aldrig kunne vise en fejl - prøver bare igen om 20 sek.
     }, 20000);
