@@ -2469,6 +2469,28 @@
       return out;
     }
 
+    // Samme princip som migrateItemsPhotos ovenfor, men for Optællings
+    // depot-ting (ét enkelt "image"-felt pr. ting, ikke fotoFor/fotoEfter).
+    async function migrateCountItemsPhotos(list) {
+      var out = [];
+      var changed = false;
+      for (var i = 0; i < (list || []).length; i++) {
+        var it = list[i];
+        if (!it) { out.push(it); continue; }
+        var newImage = await migratePhotoField(it.image);
+        if (newImage === it.image) {
+          out.push(it);
+        } else {
+          changed = true;
+          var copy = {};
+          for (var k in it) copy[k] = it[k];
+          copy.image = newImage;
+          out.push(copy);
+        }
+      }
+      return { items: out, changed: changed };
+    }
+
     // ---------- opgave-historik (til Opgaveoverblik-fanen) ----------
     var LS_HISTORY_KEY = "dlh-task-history";
 
@@ -2671,6 +2693,12 @@
     // sendes ind i selve rapport-formularen (som kun forstår rå fotos, ikke
     // IndexedDB-referencer).
     window.__dlhResolveItemsPhotos = function (items) { return resolveItemsPhotos(items); };
+
+    // Samme opslag, men for ét enkelt foto-felt ad gangen - bruges af
+    // Optælling-fanens egen visning (som viser billeder direkte i listen,
+    // ikke kun i en genereret rapport).
+    window.__dlhResolvePhoto = function (value) { return resolvePhotoField(value); };
+    window.__dlhIsPhotoRef = function (value) { return isPhotoRef(value); };
 
     // Bruges af 💾-knappen, så en backup-fil stadig indeholder de rigtige
     // fotos, selvom de reelt ligger i IndexedDB (ikke i localStorage, som
@@ -3309,12 +3337,18 @@
 
     window.__dlhAddCountItem = async function (roomId, item) {
       var now = new Date().toISOString();
+      // Flyt et evt. billede over i IndexedDB med det samme, FØR det gemmes
+      // i localStorage - samme grund som for Rapport-fanens fotos: det er
+      // selve billed-dataen (base64), der historisk har fyldt localStorage
+      // op, ikke tekst/antal.
+      var image = item.image || "";
+      try { image = await migratePhotoField(image); } catch (e) {}
       var entry = {
         id: "c" + Date.now() + Math.random().toString(36).slice(2, 8),
         roomId: roomId,
         name: item.name,
         qty: item.qty || 0,
-        image: item.image || "",
+        image: image,
         createdAt: now,
         updatedAt: now,
         deleted: false
@@ -3340,6 +3374,7 @@
     };
 
     window.__dlhSetCountImage = async function (id, image) {
+      try { image = await migratePhotoField(image); } catch (e) {}
       var list = (await freshCount()).map(function (t) {
         if (t.id !== id) return t;
         return {
@@ -3366,6 +3401,14 @@
 
     window.__dlhRefreshCount = async function () {
       var merged = await freshCount();
+      // Data fra en anden enhed kan indeholde rå (endnu ikke migrerede)
+      // billeder - IndexedDB er per-enhed, ikke synkroniseret, så DENNE
+      // enhed skal selv flytte dem over i sin egen IndexedDB.
+      try {
+        var photoResult = await migrateCountItemsPhotos(merged);
+        if (photoResult.changed) merged = photoResult.items;
+      } catch (e) {}
+      saveCountLocal(merged);
       try { await pushCount(merged); } catch (e) {}
       return merged;
     };
@@ -3559,6 +3602,19 @@
         }
       } catch (e) {}
     })();
+
+    // Samme engangs-oprydning som sweepMigrateHistoryPhotos ovenfor, men for
+    // Optællings depot-ting (image-feltet) - se migrateCountItemsPhotos.
+    (async function sweepMigrateCountPhotos() {
+      try {
+        var localCount = loadCountLocal();
+        var result = await migrateCountItemsPhotos(localCount);
+        if (result.changed) {
+          saveCountLocal(result.items);
+          if (syncCode) await pushCount(result.items);
+        }
+      } catch (e) {}
+    })();
   })();
 
   // ---------- Optælling-panel (depotrum, opdelt i rum) ----------
@@ -3634,12 +3690,37 @@
       }
     }
 
+    // Optællingens billeder kan ligge i IndexedDB som en "idbphoto:<id>"-
+    // reference i stedet for rå data (se migrateCountItemsPhotos). Da selve
+    // opslaget er asynkront, men renderingen her er synkron, bruges et
+    // cache-lag: første gang en reference ses, startes opslaget i
+    // baggrunden og der vises intet billede endnu; når opslaget er færdigt,
+    // caches det rigtige billede (nøglet på selve referencestrengen, så
+    // "idbphoto:"-præfikset ikke skal kendes/gentages her) og der
+    // genoptegnes, så billedet dukker op uden yderligere handling fra
+    // brugeren.
+    var photoResolveCache = {};
+    function resolvePhotoSync(value){
+      if(!value || !window.__dlhIsPhotoRef || !window.__dlhIsPhotoRef(value)) return value || "";
+      if(photoResolveCache[value]) return photoResolveCache[value];
+      if(window.__dlhResolvePhoto){
+        window.__dlhResolvePhoto(value).then(function(resolved){
+          if(resolved && resolved !== value){
+            photoResolveCache[value] = resolved;
+            rerender();
+          }
+        });
+      }
+      return "";
+    }
+
     // showRoom=true bruges i søgeresultater (viser hvilket rum tingen er i,
     // og en "gå til rum"-knap i stedet for tidspunktet for sidste optælling).
     function itemCardHtml(item, showRoom){
+      var imgSrc = resolvePhotoSync(item.image);
       return '<div class="cnt-item">' +
-        (item.image
-          ? '<img class="cnt-item-img" src="' + esc(item.image) + '" alt="">'
+        (imgSrc
+          ? '<img class="cnt-item-img" src="' + esc(imgSrc) + '" alt="">'
           : '<div class="cnt-item-img cnt-item-noimg">📦</div>') +
         '<div class="cnt-item-body">' +
           '<div class="cnt-item-name">' + esc(item.name) + '</div>' +

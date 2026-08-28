@@ -507,11 +507,57 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
       samme). Baglæns-kompatibilitet testet: gamle, allerede-gemte rå
       fotos vises stadig korrekt (både direkte, og efter automatisk
       migrering).
-    - **Optælling-fanens depot-billeder (`image`-feltet) er IKKE migreret
-      endnu** - samme mønster, men egen indsats (Optælling har sin egen
-      visning, der viser billeder direkte i listen, kræver derfor mere
-      end Opgaveoverblik gjorde). Planlagt som naturligt næste skridt,
-      især efter flere brugere er begyndt at bruge fanen.
+    - **Optælling-fanens depot-billeder (`image`-feltet) er nu også
+      migreret til IndexedDB** (samme grund/mønster som ovenfor - mange
+      depot-ting med billede over tid kunne på sigt ramme samme
+      pladsproblem). Selve migrerings-hjælperne (`migratePhotoField`,
+      `isPhotoRef`, IndexedDB-lageret) er fælles med Opgaveoverblikkets
+      fotos - kun selve "hvornår migreres et billede" og "hvordan vises
+      det" er specifikt for Optælling:
+      - **Skrivning**: `window.__dlhAddCountItem` og
+        `window.__dlhSetCountImage` migrerer et evt. billede med
+        `migratePhotoField`, FØR det gemmes - et nyt/skiftet billede
+        ender aldrig som rå data i `localStorage`.
+      - **`migrateCountItemsPhotos(list)`** - samme princip som
+        `migrateHistoryPhotos`, men for Optællings ting (ét `image`-felt
+        pr. ting, i stedet for `fotoFor`/`fotoEfter` pr. punkt). Kaldes
+        fra `window.__dlhRefreshCount` (data hentet fra en anden
+        enhed/serveren kan stadig indeholde rå billeder, som DENNE enhed
+        selv skal migrere - IndexedDB er pr. enhed, ikke synkroniseret)
+        og fra en ny baggrunds-oprydning ved app-start,
+        `sweepMigrateCountPhotos` (samme mønster og placering som
+        `sweepMigrateHistoryPhotos` - migrerer alt, hvad der allerede lå
+        som rå data FØR denne omlægning, én gang for alle, trygt at køre
+        igen og igen).
+      - **Visning kræver et ekstra lag, fordi Optælling - i modsætning
+        til Opgaveoverblikkets liste - viser billeder direkte i selve
+        listen** (`itemCardHtml`), og selve opslaget i IndexedDB er
+        asynkront, mens renderingen er synkron. Løst med en lille
+        "lazy-resolve"-cache i Optælling-panelets egen kode
+        (`photoResolveCache`/`resolvePhotoSync`, IKKE en ændring af hele
+        render-kæden til async - bevidst valgt for at minimere hvor meget
+        kode der skal ændres/kunne gå i stykker): `resolvePhotoSync`
+        returnerer straks det rigtige billede, hvis det allerede er slået
+        op før (cachet på selve referencestrengen), ellers starter den
+        opslaget i baggrunden og returnerer tomt for nu - når opslaget er
+        færdigt, cacher den resultatet og gentegner listen
+        (`rerender()`), så billedet dukker op uden at brugeren skal gøre
+        noget. Et billede kan derfor mangle i et øjebliks brøkdel første
+        gang det vises (fx lige efter en ny sidehentning), men retter sig
+        selv med det samme.
+      - **Backup (💾)/Gendan (📥) krævede ingen ændring** - de håndterer
+        allerede ALLE fotos generisk via `window.__dlhGetAllPhotos`/
+        `window.__dlhImportPhotos` (hele IndexedDB-lageret, uanset om et
+        billede oprindeligt kom fra Opgaveoverblik eller Optælling).
+      - Testet grundigt (Playwright) før den blev meldt klar: nyt billede
+        ved oprettelse bliver en reference (ikke rå data), "skift billede"
+        på en eksisterende ting bliver også en reference, billedet vises
+        korrekt både med det samme og efter fanenavigation væk og tilbage
+        (bekræfter selv-helbredende gentegning), en allerede-liggende rå
+        billede-ting migreres automatisk af opstarts-oprydningen efter en
+        ny sidehentning, og backup-laget indeholder de rigtige
+        billed-data bagefter. Ingen fejl i browserens konsol i noget
+        scenarie.
 - **Rapport-fanens dato-felt sætter automatisk sig selv til dags dato**
   (`ensureTodayDate()` i det ydre script, kaldt fra `reportFrame`'s
   `"load"`-event - EFTER en eventuel `pullState()` er færdig, så den ikke
