@@ -35,6 +35,10 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   browser-notifikationer kan vises korrekt på Android (se afsnittet om
   "🔔 Notifikationer"-knappen nedenfor). Lytter ikke efter `push`-events,
   ingen server sender noget til den.
+- `manifest.json`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`
+  — web app manifest og ikoner til "Installér som app" (se afsnittet om
+  Del/installér nedenfor for hvorfor disse ligger som selvstændige filer
+  i stedet for indlejret i `index.html`).
 - Udover disse er der ingen andre kildefiler. Redigér `index.html` direkte.
 
 ## Hvad appen indeholder
@@ -793,8 +797,35 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
       (se "Vigtige begrænsninger" nedenfor): pakket ud til en selvstændig
       fil, redigeret, syntaks-tjekket, pakket ind igen med sanity- og
       roundtrip-tjek, FØR den blev sat ind i `index.html` igen.
-- **Del/installér**: Web Share API + download-fallback, samt en indlejret
-  web app manifest (data-URI) til "Installér som app".
+- **Del/installér**: Web Share API + download-fallback, samt en web app
+  manifest til "Installér som app".
+  - **`manifest.json`, `icon-192.png`, `icon-512.png` og
+    `apple-touch-icon.png` er selvstændige filer i roden af projektet**,
+    IKKE indlejret som data-URI'er i `index.html` (som de var før). Rettet
+    fordi det viste sig at være selve årsagen til, at "installér som
+    app"-ikonet på hjemmeskærmen fik et lille Chrome-mærke på sig (blev
+    reelt kun oprettet som en almindelig browser-genvej, ikke en rigtig
+    installeret app) og kunne forsvinde igen efter noget tid - opdaget ved
+    brugerens observation af, at to andre apps bygget samme sted (ikke en
+    del af dette projekt) IKKE havde samme problem. Et manifest, der ligger
+    som en data-URI, har ingen "rigtig" adresse at regne relative stier
+    (`start_url`) ud fra, og nogle af Chromes indbyggede tjek for "er dette
+    en ægte installerbar app" fejlede derfor stille. Derudover manglede der
+    et 192×192-ikon (kun 180×180 og 512×512 fandtes) - Chrome kræver som
+    minimum 192×192 for at godkende installation. `icon-192.png` er nu
+    genereret ved at nedskalere det eksisterende 512×512-ikon (bedre
+    kvalitet end at opskalere det gamle 180×180). Selve `<link>`-tagsene i
+    `<head>` peger nu på disse rigtige filer (`/manifest.json`,
+    `/apple-touch-icon.png`) i stedet for lange data-URI-strenge.
+    **Ændrer ikke noget ved selve app-dataen** (opgaver, historik,
+    forbindelseskode m.v. - de ligger et helt andet sted) - kun selve
+    ikonet. Allerede eksisterende hjemmeskærms-genveje opgraderes ikke
+    automatisk til det nye, rigtige app-ikon; det kræver at man fjerner det
+    gamle ikon og tilføjer det igen ("Installér som app"/"Føj til
+    startskærm"), én gang efter denne ændring er lagt ud. `_headers`
+    opdateret med samme no-cache-regel som appens øvrige kernefiler, så en
+    fremtidig opdatering af selve ikonet/manifestet heller ikke risikerer
+    at sidde fast i en cachet, forældet udgave.
 - **Backup (💾) / Gendan (📥)-knapper** øverst i appen (ved siden af
   del-ikonet): 💾 læser KUN fra `localStorage` og synkroniserer intet - må
   gerne bruges selv hvis en enhed mistænkes for at have data, andre

@@ -15,3 +15,15 @@
 
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/icon-192.png
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/icon-512.png
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/apple-touch-icon.png
+  Cache-Control: no-cache, no-store, must-revalidate
