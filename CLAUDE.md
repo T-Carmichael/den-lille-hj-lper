@@ -650,13 +650,14 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
   kollega uden appen installeret, eller en ekstern person) kan scanne den
   med mobilkameraet og sende en opgave direkte ind i "Kommende opgaver" —
   uden at åbne selve appen, installere noget eller logge ind. Formularen
-  har kun Titel (påkrævet), Beskrivelse og "Dit navn" (begge valgfrie) —
-  navnet lægges ind i opgavens note som "📱 Indsendt via QR-kode af X", så
-  man kan se/spørge hvem der sendte den. Siden skriver direkte til samme
-  `upcoming`-synk-nøgle som selve appen, med samme "hent nyeste, læg
-  sammen, gem"-mønster (ETag-beskyttet, op til 6 forsøg) som resten af
-  appen bruger for kommende opgaver — ingen ændringer nødvendige i
-  `netlify/edge-functions/sync.js`. Ingen adgangskode kræves for at
+  har Titel (påkrævet), Beskrivelse, "Dit navn" (begge valgfrie) og nu også
+  et valgfrit **Billede** — navnet lægges ind i opgavens note som "📱
+  Indsendt via QR-kode af X", så man kan se/spørge hvem der sendte den.
+  Siden skriver direkte til samme `upcoming`-synk-nøgle som selve appen,
+  med samme "hent nyeste, læg sammen, gem"-mønster (ETag-beskyttet, op til
+  6 forsøg) som resten af appen bruger for kommende opgaver — ingen
+  ændringer nødvendige i `netlify/edge-functions/sync.js`. Ingen
+  adgangskode kræves for at
   INDSENDE (det er hele pointen — udefrakommende har ikke appens kode 8961
   og skal heller ikke bruge den); at ÆNDRE/slette en allerede indsendt
   opgave foregår som altid inde i selve Opgaveoverblik-fanen, bag den
@@ -685,6 +686,55 @@ i claude.ai — dette repo er sat op, så arbejdet kan fortsætte i Claude Code.
     tegner, er screenshottet og afkodet med en rigtig, uafhængig
     QR-scanner (Python `pyzbar`), som bekræftede at den dekoder til
     nøjagtig det forventede link.
+  - **Valgfrit billede i `tilfoej-opgave.html`**: samme canvas-nedskalering
+    (maks. 640px/JPEG) som appens egne billedfelter (Optælling, Rapport),
+    duplikeret direkte i `tilfoej-opgave.html` (siden er bevidst
+    selvstændig og deler ingen kode med `index.html`). "Send opgave"-
+    knappen låses, mens billedet stadig skaleres ned, samme beskyttelse
+    som Optællings "+ Tilføj"-knap (se ovenfor) af samme grund. Billedet
+    sendes med som rå base64 i selve `upcoming`-posten - den eksterne side
+    kender intet til appens IndexedDB (helt separat side/storage, intet
+    fælles med `index.html`) og kan derfor ikke selv migrere det.
+    - **Migreres til IndexedDB af DENNE enhed, første gang opgaven hentes
+      ned** - samme generiske `migrateImageFieldItems`-funktion som
+      Optælling bruger (omdøbt fra `migrateCountItemsPhotos`, da den var
+      100% generisk i forvejen - virker på enhver liste med et `image`-
+      felt pr. punkt). Kaldes fra `window.__dlhRefreshUpcoming` (dækker
+      ALLE steder, der henter kommende opgaver - baggrunds-poll, "Hent
+      nyeste", fane-skift, se lærdommen om notifikationer ovenfor, samme
+      princip genbrugt her med vilje) og en ny `sweepMigrateUpcomingPhotos`
+      ved app-start (samme mønster/placering som de to andre sweeps).
+      `window.__dlhAddUpcoming` (en opgave tilføjet direkte i appen, ikke
+      via QR) migrerer også med det samme, ligesom `__dlhAddCountItem`.
+    - **Vist som et lille thumbnail i selve "Kommende opgaver"-listen**
+      (`renderUpcoming` i Opgaveoverblik-panelet) - egen lazy-resolve-cache
+      (`resolveUpcomingPhotoSync`), samme princip og samme fælles,
+      generiske eksporter (`window.__dlhResolvePhoto`/`__dlhIsPhotoRef`)
+      som Optællings `resolvePhotoSync`, men sin egen cache-instans (denne
+      liste bor i en anden IIFE).
+    - **"▶ Sæt i gang" tager billedet med over i rapporten** som punktets
+      "før"-foto (`fotoFor`) - billedet slås op igen (IndexedDB-reference →
+      rå data) FØR det sendes til `REPORT_HTML` via `__addReportItem`
+      (samme nødvendige omvejs-mønster som `window.__dlhResolveItemsPhotos`
+      bruges af "Generér rapport" - `REPORT_HTML` kender intet til
+      IndexedDB).
+    - **`image`-feltet skal eksplicit bevares i alle steder, der
+      genopbygger en opgave-post ud fra enkeltfelter** (`__dlhCompleteUpcoming`,
+      `__dlhDeleteUpcomingEntry`) - ellers forsvinder billedet stille, selv
+      om selve opgaven (titel/status) forbliver korrekt, da disse
+      funktioner bevidst kun kopierer de felter, de selv navngiver.
+    - Backup (💾)/Gendan (📥) krævede ingen ændring, af samme grund som for
+      Optælling - de håndterer allerede ALLE fotos generisk uanset kilde.
+    - Testet grundigt (Playwright) før den blev meldt klar: en hel
+      ende-til-ende-simulering (indsend via `tilfoej-opgave.html` med
+      billede → åbn appen, forbind med samme kode → billedet migreres til
+      en reference og vises som thumbnail → "Sæt i gang" flytter det
+      korrekte, rå billede over i rapporten som fotoFor → opgaven fjernes
+      fra den aktive liste), samt separat: opstarts-oprydning af et
+      allerede-liggende rå billede, billedet bevares efter "✓ Udført",
+      almindelig indsendelse UDEN billede virker stadig, og Optællings
+      billedupload virker stadig uændret efter omdøbningen af den delte
+      migreringsfunktion. Ingen fejl i browserens konsol i noget scenarie.
   - **"🔔 Notifikationer"-knap** i den forbundne synk-linje (ved siden af
     "📱 QR-kode"): beder om tilladelse til almindelige browser-
     notifikationer (`Notification`-API'et), og viser én, hver gang en NY

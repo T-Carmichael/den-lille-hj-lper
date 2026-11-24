@@ -482,6 +482,13 @@
     border-radius:12px;
     padding:9px 12px;
   }
+  .ov-upcoming-item-img{
+    flex:0 0 auto;
+    width:44px;height:44px;
+    object-fit:cover;
+    border-radius:9px;
+    border:1px solid var(--line);
+  }
   .ov-upcoming-item-title{font-size:13.5px;font-weight:600;}
   .ov-upcoming-item-desc{font-size:12px;color:var(--sub);margin-top:2px;}
   .ov-upcoming-item-date{font-size:11px;color:var(--amber);font-weight:600;margin-top:4px;}
@@ -2469,9 +2476,11 @@
       return out;
     }
 
-    // Samme princip som migrateItemsPhotos ovenfor, men for Optællings
-    // depot-ting (ét enkelt "image"-felt pr. ting, ikke fotoFor/fotoEfter).
-    async function migrateCountItemsPhotos(list) {
+    // Samme princip som migrateItemsPhotos ovenfor, men for lister hvor
+    // billedet ligger i ét enkelt "image"-felt pr. punkt (ikke fotoFor/
+    // fotoEfter) - bruges af både Optællings depot-ting OG kommende
+    // opgavers (evt. QR-indsendte) billede.
+    async function migrateImageFieldItems(list) {
       var out = [];
       var changed = false;
       for (var i = 0; i < (list || []).length; i++) {
@@ -3056,11 +3065,20 @@
 
     window.__dlhAddUpcoming = async function (task) {
       var now = new Date().toISOString();
+      // Flyt et evt. billede over i IndexedDB med det samme, FØR det gemmes
+      // lokalt - samme princip som __dlhAddCountItem. Dækker en opgave
+      // tilføjet direkte i appen med et billede; en ekstern QR-indsendelse
+      // (som ikke går gennem denne funktion) migreres i stedet af
+      // __dlhRefreshUpcoming/sweepMigrateUpcomingPhotos, første gang DENNE
+      // enhed henter den ned.
+      var image = task.image || "";
+      try { image = await migratePhotoField(image); } catch (e) {}
       var entry = {
         id: "u" + Date.now() + Math.random().toString(36).slice(2, 8),
         title: task.title,
         note: task.note || "",
         dueDate: task.dueDate || "",
+        image: image,
         createdAt: now,
         updatedAt: now,
         deleted: false
@@ -3076,7 +3094,7 @@
       var list = loadUpcomingLocal().map(function (t) {
         if (t.id !== id) return t;
         return {
-          id: t.id, title: t.title, note: t.note, dueDate: t.dueDate,
+          id: t.id, title: t.title, note: t.note, dueDate: t.dueDate, image: t.image,
           createdAt: t.createdAt, updatedAt: now, deleted: true, completedAt: now
         };
       });
@@ -3109,7 +3127,7 @@
       var list = loadUpcomingLocal().map(function (t) {
         if (t.id !== id) return t;
         return {
-          id: t.id, title: t.title, note: t.note, dueDate: t.dueDate,
+          id: t.id, title: t.title, note: t.note, dueDate: t.dueDate, image: t.image,
           createdAt: t.createdAt, updatedAt: now, deleted: true, completedAt: null
         };
       });
@@ -3126,6 +3144,15 @@
         var remote = await pullUpcomingRemote();
         if (remote === null) return local;
         var merged = mergeUpcoming(local, remote);
+        // Data fra en anden enhed - eller en ekstern QR-indsendelse med et
+        // vedhæftet billede - kan stadig indeholde et rå (endnu ikke
+        // migreret) billede. IndexedDB er pr. enhed, ikke synkroniseret, så
+        // DENNE enhed skal selv flytte det over (samme princip som
+        // __dlhRefreshCount for Optælling).
+        try {
+          var photoResult = await migrateImageFieldItems(merged);
+          if (photoResult.changed) merged = photoResult.items;
+        } catch (e) {}
         saveUpcomingLocal(merged);
         await pushUpcoming(merged);
         // Tjekket for nye QR-indsendte opgaver (til 🔔-notifikationer) sker
@@ -3405,7 +3432,7 @@
       // billeder - IndexedDB er per-enhed, ikke synkroniseret, så DENNE
       // enhed skal selv flytte dem over i sin egen IndexedDB.
       try {
-        var photoResult = await migrateCountItemsPhotos(merged);
+        var photoResult = await migrateImageFieldItems(merged);
         if (photoResult.changed) merged = photoResult.items;
       } catch (e) {}
       saveCountLocal(merged);
@@ -3604,14 +3631,28 @@
     })();
 
     // Samme engangs-oprydning som sweepMigrateHistoryPhotos ovenfor, men for
-    // Optællings depot-ting (image-feltet) - se migrateCountItemsPhotos.
+    // Optællings depot-ting (image-feltet) - se migrateImageFieldItems.
     (async function sweepMigrateCountPhotos() {
       try {
         var localCount = loadCountLocal();
-        var result = await migrateCountItemsPhotos(localCount);
+        var result = await migrateImageFieldItems(localCount);
         if (result.changed) {
           saveCountLocal(result.items);
           if (syncCode) await pushCount(result.items);
+        }
+      } catch (e) {}
+    })();
+
+    // Samme engangs-oprydning igen, men for kommende opgavers image-felt
+    // (en ekstern QR-indsendelse kan have et vedhæftet, endnu rå billede
+    // liggende lokalt fra før denne enhed nåede at migrere det).
+    (async function sweepMigrateUpcomingPhotos() {
+      try {
+        var localUpcoming = loadUpcomingLocal();
+        var result = await migrateImageFieldItems(localUpcoming);
+        if (result.changed) {
+          saveUpcomingLocal(result.items);
+          if (syncCode) await pushUpcoming(result.items);
         }
       } catch (e) {}
     })();
@@ -3691,7 +3732,7 @@
     }
 
     // Optællingens billeder kan ligge i IndexedDB som en "idbphoto:<id>"-
-    // reference i stedet for rå data (se migrateCountItemsPhotos). Da selve
+    // reference i stedet for rå data (se migrateImageFieldItems). Da selve
     // opslaget er asynkront, men renderingen her er synkron, bruges et
     // cache-lag: første gang en reference ses, startes opslaget i
     // baggrunden og der vises intet billede endnu; når opslaget er færdigt,
@@ -4288,6 +4329,27 @@
       } catch(e){ return dateStr; }
     }
 
+    // Samme "lazy-resolve"-cache-mønster som Optælling-panelet bruger for
+    // sit image-felt (se resolvePhotoSync der) - et vedhæftet billede på en
+    // kommende opgave (fx fra en QR-indsendelse) kan ligge som en IndexedDB-
+    // reference, og selve opslaget er asynkront, mens renderingen her er
+    // synkron. Egen cache-instans (denne IIFE er adskilt fra Optælling-
+    // panelets), men bruger de samme fælles, generiske eksporter.
+    var upcomingPhotoResolveCache = {};
+    function resolveUpcomingPhotoSync(value){
+      if(!value || !window.__dlhIsPhotoRef || !window.__dlhIsPhotoRef(value)) return value || "";
+      if(upcomingPhotoResolveCache[value]) return upcomingPhotoResolveCache[value];
+      if(window.__dlhResolvePhoto){
+        window.__dlhResolvePhoto(value).then(function(resolved){
+          if(resolved && resolved !== value){
+            upcomingPhotoResolveCache[value] = resolved;
+            renderUpcoming();
+          }
+        });
+      }
+      return "";
+    }
+
     function renderUpcoming(){
       var listEl = document.getElementById("ov-upcoming-list");
       if(!listEl) return;
@@ -4301,7 +4363,9 @@
       }
       var html = "";
       list.forEach(function(t){
+        var imgSrc = t.image ? resolveUpcomingPhotoSync(t.image) : "";
         html += '<div class="ov-upcoming-item">' +
+          (imgSrc ? '<img class="ov-upcoming-item-img" src="' + esc(imgSrc) + '" alt="">' : '') +
           '<div><div class="ov-upcoming-item-title">' + esc(t.title) + '</div>' +
           (t.note ? '<div class="ov-upcoming-item-desc">' + esc(t.note) + '</div>' : '') +
           (t.dueDate ? '<div class="ov-upcoming-item-date">' + esc(formatDueDate(t.dueDate)) + '</div>' : '') +
@@ -4325,6 +4389,15 @@
       var task = list.filter(function(t){ return t.id === id; })[0];
       if(!task) return;
 
+      // Et evt. vedhæftet billede kan ligge som en IndexedDB-reference -
+      // REPORT_HTML kender intet til IndexedDB (samme grund som
+      // window.__dlhResolveItemsPhotos bruges af "Generér rapport") og
+      // forventer altid et rå foto til fotoFor.
+      var resolvedImage = task.image || "";
+      try {
+        if(resolvedImage && window.__dlhResolvePhoto) resolvedImage = await window.__dlhResolvePhoto(resolvedImage);
+      } catch(e){}
+
       var frame = document.getElementById("report-frame");
       try {
         var today = new Date().toISOString().slice(0, 10);
@@ -4333,7 +4406,8 @@
         frame.contentWindow.__addReportItem({
           emne: task.title,
           krav: task.note || "",
-          status: "AFV"
+          status: "AFV",
+          fotoFor: resolvedImage
         });
       } catch(e){
         alert("Kunne ikke flytte opgaven til rapporten. Prøv igen.");

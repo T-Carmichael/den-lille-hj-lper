@@ -95,6 +95,36 @@
     color:var(--ink);
     cursor:pointer;
   }
+  .photo-row{display:flex;align-items:center;gap:12px;margin-top:6px;}
+  .photo-label{
+    display:inline-block;
+    width:auto;
+    margin:0;
+    padding:9px 14px;
+    border:1px solid var(--line);
+    border-radius:9px;
+    background:#fff;
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--ink);
+    cursor:pointer;
+  }
+  .photo-preview-wrap{display:none;align-items:center;gap:8px;}
+  .photo-preview-wrap.show{display:flex;}
+  .photo-preview-wrap img{
+    width:52px;height:52px;
+    object-fit:cover;
+    border-radius:9px;
+    border:1px solid var(--line);
+  }
+  .photo-remove-btn{
+    background:none;
+    border:none;
+    color:var(--err);
+    font-size:13px;
+    cursor:pointer;
+    padding:4px;
+  }
 </style>
 </head>
 <body>
@@ -117,6 +147,16 @@
 
         <label for="f-name">Dit navn (valgfri, så vi ved hvem vi kan spørge)</label>
         <input type="text" id="f-name" autocomplete="off" maxlength="100">
+
+        <label for="f-photo">Billede (valgfri)</label>
+        <div class="photo-row">
+          <label class="photo-label" id="f-photo-label" for="f-photo">📷 Vælg billede</label>
+          <input type="file" id="f-photo" accept="image/*" capture="environment" hidden>
+          <div class="photo-preview-wrap" id="photo-preview-wrap">
+            <img id="photo-preview-img" alt="">
+            <button type="button" class="photo-remove-btn" id="photo-remove-btn">✕ Fjern</button>
+          </div>
+        </div>
 
         <button type="submit" class="btn" id="submit-btn">Send opgave</button>
         <div class="msg" id="form-msg"></div>
@@ -141,6 +181,74 @@
   var submitBtn = document.getElementById("submit-btn");
   var formMsg = document.getElementById("form-msg");
   var successBox = document.getElementById("success-box");
+
+  var photoInput = document.getElementById("f-photo");
+  var photoLabel = document.getElementById("f-photo-label");
+  var photoPreviewWrap = document.getElementById("photo-preview-wrap");
+  var photoPreviewImg = document.getElementById("photo-preview-img");
+  var photoRemoveBtn = document.getElementById("photo-remove-btn");
+  var pendingImage = "";
+
+  // Skalerer billedet ned til maks. 640px/JPEG i browseren, FØR det sendes -
+  // samme princip (og samme tal) som appens egne billedfelter (Rapport-
+  // fanens før/efter-fotos, Optællings depot-billeder), så et kamerabillede
+  // på flere MB ikke sendes råt over mobilnettet.
+  function readAndResizeImage(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = function () {
+        var img = new Image();
+        img.onerror = reject;
+        img.onload = function () {
+          var maxDim = 640;
+          var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          var w = Math.round(img.width * scale) || 1;
+          var h = Math.round(img.height * scale) || 1;
+          var canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", 0.6));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function setPhotoPreview(dataUrl) {
+    pendingImage = dataUrl || "";
+    if (pendingImage) {
+      photoPreviewImg.src = pendingImage;
+      photoPreviewWrap.classList.add("show");
+      photoLabel.textContent = "📷 Skift billede";
+    } else {
+      photoPreviewImg.src = "";
+      photoPreviewWrap.classList.remove("show");
+      photoLabel.textContent = "📷 Vælg billede";
+    }
+  }
+
+  photoInput.addEventListener("change", async function () {
+    var file = photoInput.files && photoInput.files[0];
+    if (!file) return;
+    photoLabel.textContent = "Behandler billede...";
+    submitBtn.disabled = true;
+    try {
+      var dataUrl = await readAndResizeImage(file);
+      setPhotoPreview(dataUrl);
+    } catch (e) {
+      setPhotoPreview("");
+    } finally {
+      submitBtn.disabled = false;
+      photoInput.value = "";
+    }
+  });
+
+  photoRemoveBtn.addEventListener("click", function () {
+    setPhotoPreview("");
+  });
 
   if (!syncCode) {
     noCodeMsg.style.display = "block";
@@ -220,6 +328,7 @@
       title: title,
       note: noteParts.join("\n\n"),
       dueDate: "",
+      image: pendingImage || "",
       createdAt: now,
       updatedAt: now,
       deleted: false
@@ -242,6 +351,7 @@
 
   document.getElementById("send-another-btn").addEventListener("click", function () {
     form.reset();
+    setPhotoPreview("");
     successBox.classList.remove("show");
     formCard.style.display = "block";
     formMsg.className = "msg";
